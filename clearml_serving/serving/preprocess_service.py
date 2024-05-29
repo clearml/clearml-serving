@@ -576,13 +576,22 @@ class CustomAsyncPreprocessRequest(BasePreprocessRequest):
             return await self._preprocess.postprocess(data, state, collect_custom_statistics_fn)
         return data
 
-    async def process(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
+    async def completion(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
         """
         The actual processing function.
         We run the process in this context
         """
-        if self._preprocess is not None and hasattr(self._preprocess, 'process'):
-            return await self._preprocess.process(data, state, collect_custom_statistics_fn)
+        if self._preprocess is not None and hasattr(self._preprocess, 'completion'):
+            return await self._preprocess.completion(data, state, collect_custom_statistics_fn)
+        return None
+    
+    async def chat_completion(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
+        """
+        The actual processing function.
+        We run the process in this context
+        """
+        if self._preprocess is not None and hasattr(self._preprocess, 'chat_completion'):
+            return await self._preprocess.chat_completion(data, state, collect_custom_statistics_fn)
         return None
 
     @staticmethod

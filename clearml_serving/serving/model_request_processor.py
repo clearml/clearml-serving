@@ -155,7 +155,7 @@ class ModelRequestProcessor(object):
         self._serving_base_url = None
         self._metric_log_freq = None
 
-    async def process_request(self, base_url: str, version: str, request_body: dict) -> dict:
+    async def process_request(self, base_url: str, version: str, request_body: dict, url_type: str) -> dict:
         """
         Process request coming in,
         Raise Value error if url does not match existing endpoints
@@ -188,7 +188,7 @@ class ModelRequestProcessor(object):
                 processor = processor_cls(model_endpoint=ep, task=self._task)
                 self._engine_processor_lookup[url] = processor
 
-            return_value = await self._process_request(processor=processor, url=url, body=request_body)
+            return_value = await self._process_request(processor=processor, url=url, body=request_body, url_type=url_type)
         finally:
             self._request_processing_state.dec()
 
@@ -1188,7 +1188,7 @@ class ModelRequestProcessor(object):
         # update preprocessing classes
         BasePreprocessRequest.set_server_config(self._configuration)
 
-    async def _process_request(self, processor: BasePreprocessRequest, url: str, body: dict) -> dict:
+    async def _process_request(self, processor: BasePreprocessRequest, url: str, body: dict, url_type: str) -> dict:
         # collect statistics for this request
         stats_collect_fn = None
         collect_stats = False
@@ -1211,9 +1211,16 @@ class ModelRequestProcessor(object):
             if processor.is_preprocess_async \
             else processor.preprocess(body, state, stats_collect_fn)
         # noinspection PyUnresolvedReferences
-        processed = await processor.process(preprocessed, state, stats_collect_fn) \
-            if processor.is_process_async \
-            else processor.process(preprocessed, state, stats_collect_fn)
+        if url_type == "completion":
+            processed = await processor.completion(preprocessed, state, stats_collect_fn) \
+                if processor.is_process_async \
+                else processor.completion(preprocessed, state, stats_collect_fn)
+        elif url_type == "chat_completion":
+            processed = await processor.chat_completion(preprocessed, state, stats_collect_fn) \
+                if processor.is_process_async \
+                else processor.chat_completion(preprocessed, state, stats_collect_fn)
+        else:
+            raise ValueError(f"wrong url_type: expected 'completion' and 'chat_completion', got {url_type}")
         # noinspection PyUnresolvedReferences
         return_value = await processor.postprocess(processed, state, stats_collect_fn) \
             if processor.is_postprocess_async \

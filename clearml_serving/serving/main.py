@@ -92,7 +92,7 @@ async def cuda_exception_handler(request, exc):
 
 
 router = APIRouter(
-    prefix="/serve",
+    prefix="/clearml",
     tags=["models"],
     responses={404: {"description": "Model Serving Endpoint Not found"}},
     route_class=GzipRoute,  # mark-out to remove support for GZip content encoding
@@ -100,15 +100,49 @@ router = APIRouter(
 
 
 # cover all routing options for model version `/{model_id}`, `/{model_id}/123`, `/{model_id}?version=123`
-@router.post("/{model_id}/{version}")
-@router.post("/{model_id}/")
-@router.post("/{model_id}")
-async def serve_model(model_id: str, version: Optional[str] = None, request: Union[bytes, Dict[Any, Any]] = None):
+# @router.post("/{model_id}/{version}")
+# @router.post("/{model_id}/")
+# @router.post("/{model_id}")
+# async def serve_model(model_id: str, version: Optional[str] = None, request: Union[bytes, Dict[Any, Any]] = None):
+#     try:
+#         return_value = await processor.process_request(
+#             base_url=model_id,
+#             version=version,
+#             request_body=request
+#         )
+#     except EndpointNotFoundException as ex:
+#         raise HTTPException(status_code=404, detail="Error processing request, endpoint was not found: {}".format(ex))
+#     except (EndpointModelLoadException, EndpointBackendEngineException) as ex:
+#         session_logger.report_text("[{}] Exception [{}] {} while processing request: {}\n{}".format(
+#             instance_id, type(ex), ex, request, "".join(traceback.format_exc())))
+#         raise HTTPException(status_code=422, detail="Error [{}] processing request: {}".format(type(ex), ex))
+#     except ServingInitializationException as ex:
+#         session_logger.report_text("[{}] Exception [{}] {} while loading serving inference: {}\n{}".format(
+#             instance_id, type(ex), ex, request, "".join(traceback.format_exc())))
+#         raise HTTPException(status_code=500, detail="Error [{}] processing request: {}".format(type(ex), ex))
+#     except ValueError as ex:
+#         session_logger.report_text("[{}] Exception [{}] {} while processing request: {}\n{}".format(
+#             instance_id, type(ex), ex, request, "".join(traceback.format_exc())))
+#         if "CUDA out of memory. " in str(ex) or "NVML_SUCCESS == r INTERNAL ASSERT FAILED" in str(ex):
+#             raise CUDAException(exception=ex)
+#         else:
+#             raise HTTPException(status_code=422, detail="Error [{}] processing request: {}".format(type(ex), ex))
+#     except Exception as ex:
+#         session_logger.report_text("[{}] Exception [{}] {} while processing request: {}\n{}".format(
+#             instance_id, type(ex), ex, request, "".join(traceback.format_exc())))
+#         raise HTTPException(status_code=500, detail="Error  [{}] processing request: {}".format(type(ex), ex))
+#     return return_value
+
+
+@router.post("/{model_id}/v1/chat/completions")
+@router.post("/{model_id}/v1/chat/completions/")
+async def serve_model(model_id: str, request: Union[bytes, Dict[Any, Any]] = None):
     try:
         return_value = await processor.process_request(
             base_url=model_id,
-            version=version,
-            request_body=request
+            version=None,
+            request_body=request,
+            url_type="chat_completion"
         )
     except EndpointNotFoundException as ex:
         raise HTTPException(status_code=404, detail="Error processing request, endpoint was not found: {}".format(ex))
@@ -123,7 +157,41 @@ async def serve_model(model_id: str, version: Optional[str] = None, request: Uni
     except ValueError as ex:
         session_logger.report_text("[{}] Exception [{}] {} while processing request: {}\n{}".format(
             instance_id, type(ex), ex, request, "".join(traceback.format_exc())))
-        if "CUDA out of memory. " in str(ex):
+        if "CUDA out of memory. " in str(ex) or "NVML_SUCCESS == r INTERNAL ASSERT FAILED" in str(ex):
+            raise CUDAException(exception=ex)
+        else:
+            raise HTTPException(status_code=422, detail="Error [{}] processing request: {}".format(type(ex), ex))
+    except Exception as ex:
+        session_logger.report_text("[{}] Exception [{}] {} while processing request: {}\n{}".format(
+            instance_id, type(ex), ex, request, "".join(traceback.format_exc())))
+        raise HTTPException(status_code=500, detail="Error  [{}] processing request: {}".format(type(ex), ex))
+    return return_value
+
+
+@router.post("/{model_id}/v1/completions")
+@router.post("/{model_id}/v1/completions/")
+async def serve_model(model_id: str, request: Union[bytes, Dict[Any, Any]] = None):
+    try:
+        return_value = await processor.process_request(
+            base_url=model_id,
+            version=None,
+            request_body=request,
+            url_type="completion"
+        )
+    except EndpointNotFoundException as ex:
+        raise HTTPException(status_code=404, detail="Error processing request, endpoint was not found: {}".format(ex))
+    except (EndpointModelLoadException, EndpointBackendEngineException) as ex:
+        session_logger.report_text("[{}] Exception [{}] {} while processing request: {}\n{}".format(
+            instance_id, type(ex), ex, request, "".join(traceback.format_exc())))
+        raise HTTPException(status_code=422, detail="Error [{}] processing request: {}".format(type(ex), ex))
+    except ServingInitializationException as ex:
+        session_logger.report_text("[{}] Exception [{}] {} while loading serving inference: {}\n{}".format(
+            instance_id, type(ex), ex, request, "".join(traceback.format_exc())))
+        raise HTTPException(status_code=500, detail="Error [{}] processing request: {}".format(type(ex), ex))
+    except ValueError as ex:
+        session_logger.report_text("[{}] Exception [{}] {} while processing request: {}\n{}".format(
+            instance_id, type(ex), ex, request, "".join(traceback.format_exc())))
+        if "CUDA out of memory. " in str(ex) or "NVML_SUCCESS == r INTERNAL ASSERT FAILED" in str(ex):
             raise CUDAException(exception=ex)
         else:
             raise HTTPException(status_code=422, detail="Error [{}] processing request: {}".format(type(ex), ex))
