@@ -155,7 +155,7 @@ class ModelRequestProcessor(object):
         self._serving_base_url = None
         self._metric_log_freq = None
 
-    async def process_request(self, base_url: str, version: str, request_body: dict, url_type: str) -> dict:
+    async def process_request(self, base_url: str, request_body: dict, url_type: str) -> dict:
         """
         Process request coming in,
         Raise Value error if url does not match existing endpoints
@@ -167,11 +167,11 @@ class ModelRequestProcessor(object):
             while self._update_lock_flag:
                 await asyncio.sleep(0.5+random())
             # retry to process
-            return await self.process_request(base_url=base_url, version=version, request_body=request_body)
+            return await self.process_request(base_url=base_url, request_body=request_body, url_type=url_type)
 
         try:
             # normalize url and version
-            url = self._normalize_endpoint_url(base_url, version)
+            url = self._normalize_endpoint_url(base_url)
 
             # check canary
             canary_url = self._process_canary(base_url=url)
@@ -1211,16 +1211,16 @@ class ModelRequestProcessor(object):
             if processor.is_preprocess_async \
             else processor.preprocess(body, state, stats_collect_fn)
         # noinspection PyUnresolvedReferences
-        if url_type == "completion":
+        if url_type == "completions":
             processed = await processor.completion(preprocessed, state, stats_collect_fn) \
                 if processor.is_process_async \
                 else processor.completion(preprocessed, state, stats_collect_fn)
-        elif url_type == "chat_completion":
+        elif url_type == "chat/completions":
             processed = await processor.chat_completion(preprocessed, state, stats_collect_fn) \
                 if processor.is_process_async \
                 else processor.chat_completion(preprocessed, state, stats_collect_fn)
         else:
-            raise ValueError(f"wrong url_type: expected 'completion' and 'chat_completion', got {url_type}")
+            raise ValueError(f"wrong url_type: expected 'completions' and 'chat/completions', got {url_type}")
         # noinspection PyUnresolvedReferences
         return_value = await processor.postprocess(processed, state, stats_collect_fn) \
             if processor.is_postprocess_async \
@@ -1341,8 +1341,9 @@ class ModelRequestProcessor(object):
         return task
 
     @classmethod
-    def _normalize_endpoint_url(cls, endpoint: str, version: Optional[str] = None) -> str:
-        return "{}/{}".format(endpoint.rstrip("/"), version or "").rstrip("/")
+    def _normalize_endpoint_url(cls, endpoint: str) -> str:
+        # return "{}/{}".format(endpoint.rstrip("/"), version or "").rstrip("/")
+        return endpoint
 
     @classmethod
     def _validate_model(cls, endpoint: Union[ModelEndpoint, ModelMonitoring]) -> bool:

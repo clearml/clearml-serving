@@ -19,7 +19,7 @@ class BasePreprocessRequest(object):
     __preprocessing_lookup = {}
     __preprocessing_modules = set()
     _grpc_env_conf_prefix = "CLEARML_GRPC_"
-    _default_serving_base_url = "http://127.0.0.1:8080/serve/"
+    _default_serving_base_url = "http://127.0.0.1:8080/clearml/"
     _server_config = {}  # externally configured by the serving inference service
     _timeout = None  # timeout in seconds for the entire request, set in __init__
     is_preprocess_async = False
@@ -292,7 +292,7 @@ class TritonPreprocessRequest(BasePreprocessRequest):
 
         self._grpc_stub = {}
 
-    async def process(
+    async def chat_completion(
             self,
             data: Any,
             state: dict,
@@ -428,74 +428,28 @@ class TritonPreprocessRequest(BasePreprocessRequest):
         return output_results[0] if index == 1 else output_results
 
 
-@BasePreprocessRequest.register_engine("sklearn", modules=["joblib", "sklearn"])
-class SKLearnPreprocessRequest(BasePreprocessRequest):
-    def __init__(self, model_endpoint: ModelEndpoint, task: Task = None):
-        super(SKLearnPreprocessRequest, self).__init__(
-            model_endpoint=model_endpoint, task=task)
-        if self._model is None:
-            # get model
-            import joblib  # noqa
-            self._model = joblib.load(filename=self._get_local_model_file())
-
-    def process(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
-        """
-        The actual processing function.
-        We run the model in this context
-        """
-        return self._model.predict(data)
-
-
-@BasePreprocessRequest.register_engine("xgboost", modules=["xgboost"])
-class XGBoostPreprocessRequest(BasePreprocessRequest):
-    def __init__(self, model_endpoint: ModelEndpoint, task: Task = None):
-        super(XGBoostPreprocessRequest, self).__init__(
-            model_endpoint=model_endpoint, task=task)
-        if self._model is None:
-            # get model
-            import xgboost  # noqa
-            self._model = xgboost.Booster()
-            self._model.load_model(self._get_local_model_file())
-
-    def process(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
-        """
-        The actual processing function.
-        We run the model in this context
-        """
-        return self._model.predict(data)
-
-
-@BasePreprocessRequest.register_engine("lightgbm", modules=["lightgbm"])
-class LightGBMPreprocessRequest(BasePreprocessRequest):
-    def __init__(self, model_endpoint: ModelEndpoint, task: Task = None):
-        super(LightGBMPreprocessRequest, self).__init__(
-            model_endpoint=model_endpoint, task=task)
-        if self._model is None:
-            # get model
-            import lightgbm  # noqa
-            self._model = lightgbm.Booster(model_file=self._get_local_model_file())
-
-    def process(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
-        """
-        The actual processing function.
-        We run the model in this context
-        """
-        return self._model.predict(data)
-
-
 @BasePreprocessRequest.register_engine("custom")
 class CustomPreprocessRequest(BasePreprocessRequest):
     def __init__(self, model_endpoint: ModelEndpoint, task: Task = None):
         super(CustomPreprocessRequest, self).__init__(
             model_endpoint=model_endpoint, task=task)
 
-    def process(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
+    def completion(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
         """
         The actual processing function.
         We run the process in this context
         """
-        if self._preprocess is not None and hasattr(self._preprocess, 'process'):
-            return self._preprocess.process(data, state, collect_custom_statistics_fn)
+        if self._preprocess is not None and hasattr(self._preprocess, 'completion'):
+            return self._preprocess.completion(data, state, collect_custom_statistics_fn)
+        return None
+    
+    def chat_completion(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
+        """
+        The actual processing function.
+        We run the process in this context
+        """
+        if self._preprocess is not None and hasattr(self._preprocess, 'chat_completion'):
+            return self._preprocess.chat_completion(data, state, collect_custom_statistics_fn)
         return None
 
 
