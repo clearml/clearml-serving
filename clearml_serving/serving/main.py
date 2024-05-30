@@ -99,8 +99,8 @@ router = APIRouter(
 )
 
 
-@router.post("/v1/{endpoint_type}")
-@router.post("/v1/{endpoint_type}/")
+@router.post("/v1/{endpoint_type:path}")
+@router.post("/v1/{endpoint_type:path}/")
 async def llm_serve_model(endpoint_type: str, request: Union[bytes, Dict[Any, Any]] = None):
     try:
         return_value = await processor.process_request(
