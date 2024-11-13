@@ -15,6 +15,7 @@ from clearml_serving.version import __version__
 from clearml_serving.serving.init import setup_task
 from clearml_serving.serving.model_request_processor import ModelRequestProcessor, EndpointNotFoundException, \
     EndpointBackendEngineException, EndpointModelLoadException, ServingInitializationException
+from clearml import Task
 
 
 class GzipRequest(Request):
@@ -67,14 +68,15 @@ async def startup_event():
     if processor:
         print("ModelRequestProcessor already initialized [pid={}] [service_id={}]".format(
             os.getpid(), serving_service_task_id))
-    else:
-        print("Starting up ModelRequestProcessor [pid={}] [service_id={}]".format(
-            os.getpid(), serving_service_task_id))
-        processor = ModelRequestProcessor(
-            task_id=serving_service_task_id, update_lock_guard=singleton_sync_lock,
-        )
-        print("ModelRequestProcessor [id={}] loaded".format(processor.get_id()))
-        processor.launch(poll_frequency_sec=model_sync_frequency_secs*60)
+        return
+
+    print("Starting up ModelRequestProcessor [pid={}] [service_id={}]".format(
+        os.getpid(), serving_service_task_id))
+    processor = ModelRequestProcessor(
+        task_id=serving_service_task_id, update_lock_guard=singleton_sync_lock
+    )
+    print("ModelRequestProcessor [id={}] loaded".format(processor.get_id()))
+    processor.launch(poll_frequency_sec=model_sync_frequency_secs*60)
 
 
 @app.on_event('shutdown')
