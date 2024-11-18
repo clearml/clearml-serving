@@ -106,6 +106,7 @@ router = APIRouter(
 @router.post("/{model_id}/")
 @router.post("/{model_id}")
 async def serve_model(model_id: str, version: Optional[str] = None, request: Union[bytes, Dict[Any, Any]] = None):
+    processor.on_request_endpoint_telemetry(self, base_url=model_id, version=version)
     try:
         return_value = await processor.process_request(
             base_url=model_id,
@@ -133,6 +134,7 @@ async def serve_model(model_id: str, version: Optional[str] = None, request: Uni
         session_logger.report_text("[{}] Exception [{}] {} while processing request: {}\n{}".format(
             instance_id, type(ex), ex, request, "".join(traceback.format_exc())))
         raise HTTPException(status_code=500, detail="Error  [{}] processing request: {}".format(type(ex), ex))
+    processor.on_response_endpoint_telemetry(self, base_url=model_id, version=version)
     return return_value
 
 

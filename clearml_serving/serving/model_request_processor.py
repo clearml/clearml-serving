@@ -1,7 +1,6 @@
 import json
 import os
 import gc
-import torch
 import uuid
 from collections import deque
 from pathlib import Path
@@ -19,9 +18,6 @@ from clearml.utilities.dicts import merge_dicts, cast_str_to_bool
 from clearml.storage.util import hash_dict
 from .preprocess_service import BasePreprocessRequest
 from .endpoints import ModelEndpoint, ModelMonitoring, CanaryEP, EndpointMetricLogging
-
-if TYPE_CHECKING:
-    from clearml.router.router import Router
 
 
 class ModelRequestProcessorException(Exception):
@@ -158,61 +154,90 @@ class ModelRequestProcessor(object):
         self._triton_grpc_compression = None
         self._serving_base_url = None
         self._metric_log_freq = None
-        self._create_clearml_router()
+        self._endpoint_telemetry = {}
+        self._enable_endpoint_telemetry = os.environ.get("CLEARML_ENABLE_ENDPOINT_TELEMETRY", "1") != "0"
 
-    def _create_clearml_router(self):
-        self._container_ids = {}
-        if os.environ.get("ENABLE_ENDPOINT_TELEMETRY", "0") == "0":
-            self._clearml_router = None
-            return
-        self._clearml_router = self._task.get_router()
-        self._clearml_router.set_local_proxy_parameters(
-            incoming_port=int(os.environ.get("CLEARML_SERVING_PORT", "8080")),
-            workers=(
-                int(os.environ.get("CLEARML_SERVING_NUM_PROCESS"))
-                if (
-                    os.environ.get("CLEARML_SERVING_NUM_PROCESS") and os.environ.get("CLEARML_USE_GUNICORN", "0") == "0"
+    def on_request_endpoint_telemetry(self, base_url=None, version=None):
+        try:
+            if not self._enable_endpoint_telemetry:
+                return
+
+            url = self._normalize_endpoint_url(base_url, version)
+            endpoint_telemetry = self._endpoint_telemetry.get(url)
+            if endpoint_telemetry:
+                endpoint_telemetry.on_request()
+        except Exception:
+            pass
+
+    def on_response_endpoint_telemetry(self, base_url=None, version=None):
+        try:
+            if not self._enable_endpoint_telemetry:
+                return
+
+            url = self._normalize_endpoint_url(base_url, version)
+            endpoint_telemetry = self._endpoint_telemetry.get(url)
+            if endpoint_telemetry:
+                endpoint_telemetry.on_response()
+        except Exception:
+            pass
+
+    def _start_model_endpoint_telemetry(self, endpoint, loading=False):
+        try:
+            if not self._enable_endpoint_telemetry:
+                return
+
+            from clearml.router.endpoint_telemetry import EndpointTelemetry
+
+            url = self._normalize_endpoint_url(endpoint.serving_url, endpoint.version)
+            model = InputModel(model_id=endpoint.model_id)
+            model_url = "{}/projects/{}/models/{}/output/general".format(
+                self._task._get_app_server().rstrip("/"), model.project, model.id
+            )
+            if url not in self._endpoint_telemetry:
+                container_id = str(uuid.uuid4()).replace("-", "")
+                self._endpoint_telemetry[url] = EndpointTelemetry(
+                    endpoint_name=model.name,
+                    model_name=model.name,
+                    model=model.id,
+                    model_url=model_url,
+                    model_source="ClearML",
+                    model_version=endpoint.version,
+                    tags=model.tags,
+                    system_tags=model.system_tags,
+                    input_size=endpoint.input_size,
+                    input_type=endpoint.input_type,
+                    endpoint_url=url if not loading else None,
+                    preprocess_artifact=endpoint.preprocess_artifact,
+                    container_id=container_id,
+                    force_register=True
                 )
-                else int(os.environ.get("GUNICORN_NUM_PROCESS"))
-                if (os.environ.get("GUNICORN_NUM_PROCESS") and os.environ.get("CLEARML_USE_GUNICORN", "0") != "0")
-                else None
-            ),
-            default_target="http://localhost:{}".format(os.environ.get("INTERNAL_SERVING_PORT")),
-        )
+            else:
+                self._endpoint_telemetry[url].update(
+                    endpoint_name=model.name,
+                    model_name=model.name,
+                    model=model.id,
+                    model_url=model_url,
+                    model_version=endpoint.version,
+                    tags=model.tags,
+                    system_tags=model.system_tags,
+                    input_size=endpoint.input_size,
+                    input_type=endpoint.input_type,
+                    endpoint_url=url if not loading else None,
+                    preprocess_artifact=endpoint.preprocess_artifact
+                )
+        except Exception as e:
+            print("Error: Could not start endpoint telemetry '{}'".format(e))
 
-    def _register_model_endpoint_clearml_router(self, endpoint, url, loading=False):
-        if not self._clearml_router:
-            return
-        if url not in self._container_ids:
-            self._container_ids[url] = str(uuid.uuid4()).replace("-", "")
-        model = InputModel(model_id=endpoint.model_id)
-        model_url = "{}/projects/{}/models/{}/output/general".format(
-            self._task._get_app_server().rstrip("/"), model.project, model.id
-        )
-        self._clearml_router.create_local_route(
-            "/serve/{}".format(endpoint.model_id),
-            "http://localhost:{}/serve/{}".format(os.environ.get("INTERNAL_SERVING_PORT"), endpoint.model_id),
-            endpoint_telemetry={
-                "endpoint_name": model.name,
-                "model_name": model.name,
-                "model": model.id,
-                "model_url": model_url,
-                "model_source": "ClearML",
-                "model_version": endpoint.version,
-                "tags": model.tags,
-                "system_tags": model.system_tags,
-                "input_size": endpoint.input_size,
-                "input_type": endpoint.input_type,
-                "endpoint_url": url if not loading else None,
-                "preprocess_artifact": endpoint.preprocess_artifact,
-                "container_id": self._container_ids[url]
-            },
-        )
-
-    def _remove_model_endpoint_clearml_router(self, endpoint):
-        if not self._clearml_router:
-            return
-        self._clearml_router.remove_local_route("/serve/{}".format(endpoint))
+    def _stop_model_endpoint_telemetry(self, endpoint):
+        try:
+            if not self._enable_endpoint_telemetry:
+                return
+            url = self._normalize_endpoint_url(endpoint.serving_url, endpoint.version)
+            endpoint_telemetry = self._endpoint_telemetry.pop(url, None)
+            if endpoint_telemetry:
+                endpoint_telemetry.stop()
+        except Exception as e:
+            print("Error: Could not stop endpoint telemetry '{}'".format(e))
 
     async def process_request(self, base_url: str, version: str, request_body: dict) -> dict:
         """
@@ -350,7 +375,7 @@ class ModelRequestProcessor(object):
         url = self._normalize_endpoint_url(endpoint.serving_url, endpoint.version)
         if url in self._endpoints:
             print("Warning: Model endpoint \'{}\' overwritten".format(url))
-        self._register_model_endpoint_clearml_router(endpoint, url, loading=True)
+        self._start_model_endpoint_telemetry(endpoint, loading=True)
 
         if not endpoint.model_id and any([model_project, model_name, model_tags]):
             model_query = dict(
@@ -381,7 +406,7 @@ class ModelRequestProcessor(object):
 
         # register the model
         self._add_registered_input_model(endpoint_url=endpoint.serving_url, model_id=endpoint.model_id)
-        self._register_model_endpoint_clearml_router(endpoint, url, loading=False)
+        self._start_model_endpoint_telemetry(endpoint, loading=False)
 
         self._endpoints[url] = endpoint
         return url
@@ -440,7 +465,7 @@ class ModelRequestProcessor(object):
         """
         Remove specific model endpoint, use base_model_url as unique identifier
         """
-        self._remove_model_endpoint_clearml_router(endpoint_url)
+        self._stop_model_endpoint_telemetry(endpoint_url)
         endpoint_url = self._normalize_endpoint_url(endpoint_url, version)
         if endpoint_url not in self._endpoints:
             return False
@@ -673,6 +698,9 @@ class ModelRequestProcessor(object):
             # update the state on the inference task
             if update_current_task and Task.current_task() and Task.current_task().id != self._task.id:
                 self.serialize(task=Task.current_task())
+
+        for endpoint in self._endpoints.values():
+            self._start_model_endpoint_telemetry(endpoint, loading=False)
 
         return True
 
@@ -984,7 +1012,6 @@ class ModelRequestProcessor(object):
                             del self._engine_processor_lookup[k]
                             self._engine_processor_lookup.pop(k, None)
                             gc.collect()
-                            torch.cuda.empty_cache()
                 cleanup = False
                 model_monitor_update = False
             except Exception as ex:
