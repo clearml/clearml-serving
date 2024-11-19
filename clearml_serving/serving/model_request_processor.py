@@ -181,14 +181,20 @@ class ModelRequestProcessor(object):
         except Exception:
             pass
 
-    def _start_model_endpoint_telemetry(self, endpoint, loading=False):
+    def _start_model_endpoint_telemetry(self, endpoint):
         try:
             if not self._enable_endpoint_telemetry:
                 return
 
             from clearml.router.endpoint_telemetry import EndpointTelemetry
+            from clearml.utilities.networking import get_private_ip
 
             url = self._normalize_endpoint_url(endpoint.serving_url, endpoint.version)
+            try:
+                private_ip = get_private_ip()
+            except Exception:
+                private_ip = "localhost"
+            http_url = "http://{}:{}/serve/{}".format(private_ip, os.environ.get("SERVING_PORT", "8080"), url)
             model = InputModel(model_id=endpoint.model_id)
             model_url = "{}/projects/{}/models/{}/output/general".format(
                 self._task._get_app_server().rstrip("/"), model.project, model.id
@@ -206,7 +212,7 @@ class ModelRequestProcessor(object):
                     system_tags=model.system_tags,
                     input_size=endpoint.input_size,
                     input_type=endpoint.input_type,
-                    endpoint_url=url if not loading else None,
+                    endpoint_url=http_url,
                     preprocess_artifact=endpoint.preprocess_artifact,
                     container_id=container_id,
                     force_register=True
@@ -222,7 +228,7 @@ class ModelRequestProcessor(object):
                     system_tags=model.system_tags,
                     input_size=endpoint.input_size,
                     input_type=endpoint.input_type,
-                    endpoint_url=url if not loading else None,
+                    endpoint_url=http_url,
                     preprocess_artifact=endpoint.preprocess_artifact
                 )
         except Exception as e:
@@ -375,7 +381,6 @@ class ModelRequestProcessor(object):
         url = self._normalize_endpoint_url(endpoint.serving_url, endpoint.version)
         if url in self._endpoints:
             print("Warning: Model endpoint \'{}\' overwritten".format(url))
-        self._start_model_endpoint_telemetry(endpoint, loading=True)
 
         if not endpoint.model_id and any([model_project, model_name, model_tags]):
             model_query = dict(
@@ -406,7 +411,6 @@ class ModelRequestProcessor(object):
 
         # register the model
         self._add_registered_input_model(endpoint_url=endpoint.serving_url, model_id=endpoint.model_id)
-        self._start_model_endpoint_telemetry(endpoint, loading=False)
 
         self._endpoints[url] = endpoint
         return url
@@ -465,7 +469,6 @@ class ModelRequestProcessor(object):
         """
         Remove specific model endpoint, use base_model_url as unique identifier
         """
-        self._stop_model_endpoint_telemetry(endpoint_url)
         endpoint_url = self._normalize_endpoint_url(endpoint_url, version)
         if endpoint_url not in self._endpoints:
             return False
@@ -700,7 +703,7 @@ class ModelRequestProcessor(object):
                 self.serialize(task=Task.current_task())
 
         for endpoint in self._endpoints.values():
-            self._start_model_endpoint_telemetry(endpoint, loading=False)
+            self._start_model_endpoint_telemetry(endpoint)
 
         return True
 
@@ -1006,6 +1009,7 @@ class ModelRequestProcessor(object):
                 if model_monitor_update and not cleanup:
                     for k in list(self._engine_processor_lookup.keys()):
                         if k not in self._endpoints:
+                            self._stop_model_endpoint_telemetry(self._engine_processor_lookup[k].model_endpoint)
                             # atomic
                             self._engine_processor_lookup[k]._model = None
                             self._engine_processor_lookup[k]._preprocess = None
