@@ -60,9 +60,6 @@ try:
 except (ValueError, TypeError):
     pass
 
-class CUDAException(Exception):
-    def __init__(self, exception: str):
-        self.exception = exception
 
 grpc_aio_ignore_errors = parse_grpc_errors(shlex.split(os.environ.get("CLEARML_SERVING_AIO_RPC_IGNORE_ERRORS", "")))
 grpc_aio_verbose_errors = parse_grpc_errors(shlex.split(os.environ.get("CLEARML_SERVING_AIO_RPC_VERBOSE_ERRORS", "")))
@@ -113,36 +110,18 @@ async def cuda_exception_handler(request, exc):
     return PlainTextResponse("CUDA out of memory. Restarting service", status_code=500, background=task)
 
 
-@app.on_event('shutdown')
-def shutdown_event():
-    print('RESTARTING INFERENCE SERVICE!')
-    
-async def exit_app():
-    loop = asyncio.get_running_loop()
-    loop.stop()
-    
-@app.exception_handler(CUDAException)
-async def cuda_exception_handler(request, exc):
-    task = BackgroundTask(exit_app)
-    return PlainTextResponse("CUDA out of memory. Restarting service", status_code=500, background=task)
-
-
-router = APIRouter(
-    prefix="/clearml",
-    tags=["models"],
-    responses={404: {"description": "Model Serving Endpoint Not found"}},
-    route_class=GzipRoute,  # mark-out to remove support for GZip content encoding
-)
-
-
-@router.post("/v1/{endpoint_type:path}")
-@router.post("/v1/{endpoint_type:path}/")
-async def llm_serve_model(endpoint_type: str, request: Union[bytes, Dict[Any, Any]] = None):
+def process_with_exceptions(
+    base_url: str,
+    version: Optional[str],
+    request: Union[bytes, Dict[Any, Any]],
+    serve_type: str
+):
     try:
         return_value = await processor.process_request(
-            base_url=request["model"],
+            base_url=base_url,
+            version=version,
             request_body=request,
-            url_type=endpoint_type
+            serve_type=serve_type
         )
     except EndpointNotFoundException as ex:
         raise HTTPException(status_code=404, detail="Error processing request, endpoint was not found: {}".format(ex))
@@ -189,5 +168,44 @@ async def llm_serve_model(endpoint_type: str, request: Union[bytes, Dict[Any, An
         raise HTTPException(status_code=500, detail="Error  [{}] processing request: {}".format(type(ex), ex))
     return return_value
 
+
+router = APIRouter(
+    prefix=f"/{os.environ.get("CLEARML_DEFAULT_SERVE_SUFFIX", "serve")}",
+    tags=["models"],
+    responses={404: {"description": "Model Serving Endpoint Not found"}},
+    route_class=GzipRoute,  # mark-out to remove support for GZip content encoding
+)
+
+
+@router.post("/{model_id}/{version}")
+@router.post("/{model_id}/")
+@router.post("/{model_id}")
+async def base_serve_model(
+    model_id: str,
+    version: Optional[str] = None,
+    request: Union[bytes, Dict[Any, Any]] = None
+):
+    return_value = process_with_exceptions(
+        base_url=model_id,
+        version=version,
+        request_body=request,
+        serve_type="process"
+    )
+    return return_value
+
+
+@router.post("/openai/v1/{endpoint_type:path}")
+@router.post("/openai/v1/{endpoint_type:path}/")
+async def openai_serve_model(
+    endpoint_type: str,
+    request: Union[bytes, Dict[Any, Any]] = None
+):
+    return_value = process_with_exceptions(
+        base_url=request.get("model", None),
+        version=None,
+        request_body=request,
+        serve_type=endpoint_type
+    )
+    return return_value
 
 app.include_router(router)

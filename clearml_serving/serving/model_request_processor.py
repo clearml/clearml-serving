@@ -159,7 +159,7 @@ class ModelRequestProcessor(object):
         self._serving_base_url = None
         self._metric_log_freq = None
 
-    async def process_request(self, base_url: str, request_body: dict, url_type: str) -> dict:
+    async def process_request(self, base_url: str, version: str, request_body: dict, serve_type: str) -> dict:
         """
         Process request coming in,
         Raise Value error if url does not match existing endpoints
@@ -171,11 +171,16 @@ class ModelRequestProcessor(object):
             while self._update_lock_flag:
                 await asyncio.sleep(0.5+random())
             # retry to process
-            return await self.process_request(base_url=base_url, request_body=request_body, url_type=url_type)
+            return await self.process_request(
+                base_url=base_url,
+                version=version,
+                request_body=request_body,
+                serve_type=serve_type
+            )
 
         try:
             # normalize url and version
-            url = self._normalize_endpoint_url(base_url)
+            url = self._normalize_endpoint_url(base_url, version)
 
             # check canary
             canary_url = self._process_canary(base_url=url)
@@ -192,7 +197,12 @@ class ModelRequestProcessor(object):
                 processor = processor_cls(model_endpoint=ep, task=self._task)
                 self._engine_processor_lookup[url] = processor
 
-            return_value = await self._process_request(processor=processor, url=url, body=request_body, url_type=url_type)
+            return_value = await self._process_request(
+                processor=processor,
+                url=url,
+                body=request_body,
+                serve_type=serve_type
+            )
         finally:
             self._request_processing_state.dec()
 
@@ -1193,7 +1203,7 @@ class ModelRequestProcessor(object):
         # update preprocessing classes
         BasePreprocessRequest.set_server_config(self._configuration)
 
-    async def _process_request(self, processor: BasePreprocessRequest, url: str, body: dict, url_type: str) -> dict:
+    async def _process_request(self, processor: BasePreprocessRequest, url: str, body: dict, serve_type: str) -> dict:
         # collect statistics for this request
         stats_collect_fn = None
         collect_stats = False
@@ -1215,13 +1225,19 @@ class ModelRequestProcessor(object):
         preprocessed = await processor.preprocess(body, state, stats_collect_fn) \
             if processor.is_preprocess_async \
             else processor.preprocess(body, state, stats_collect_fn)
-        # noinspection PyUnresolvedReferences
-        if url_type == "completions":
-            processed = await processor.completion(preprocessed, state, stats_collect_fn) \
+        if serve_type == "process":
+            # noinspection PyUnresolvedReferences
+            processed = await processor.process(preprocessed, state, stats_collect_fn) \
+                if processor.is_process_async \
+                else processor.process(preprocessed, state, stats_collect_fn)
+        elif serve_type == "completions":
+            # noinspection PyUnresolvedReferences
+            processed = await processor.completions(preprocessed, state, stats_collect_fn) \
                 if processor.is_process_async \
                 else processor.completion(preprocessed, state, stats_collect_fn)
-        elif url_type == "chat/completions":
-            processed = await processor.chat_completion(preprocessed, state, stats_collect_fn) \
+        elif serve_type == "chat/completions":
+            # noinspection PyUnresolvedReferences
+            processed = await processor.chat_completions(preprocessed, state, stats_collect_fn) \
                 if processor.is_process_async \
                 else processor.chat_completion(preprocessed, state, stats_collect_fn)
         else:
@@ -1346,9 +1362,8 @@ class ModelRequestProcessor(object):
         return task
 
     @classmethod
-    def _normalize_endpoint_url(cls, endpoint: str) -> str:
-        # return "{}/{}".format(endpoint.rstrip("/"), version or "").rstrip("/")
-        return endpoint
+    def _normalize_endpoint_url(cls, endpoint: str, version: Optional[str] = None) -> str:
+        return "{}/{}".format(endpoint.rstrip("/"), version or "").rstrip("/")
 
     @classmethod
     def _validate_model(cls, endpoint: Union[ModelEndpoint, ModelMonitoring]) -> bool:
