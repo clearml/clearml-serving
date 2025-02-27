@@ -1,7 +1,6 @@
 import json
 import os
 import gc
-import torch
 from collections import deque
 from pathlib import Path
 from random import random
@@ -18,6 +17,11 @@ from clearml.utilities.dicts import merge_dicts, cast_str_to_bool
 from clearml.storage.util import hash_dict
 from .preprocess_service import BasePreprocessRequest
 from .endpoints import ModelEndpoint, ModelMonitoring, CanaryEP, EndpointMetricLogging
+
+try:
+    import torch
+except ImportError:
+    torch = None
 
 
 class ModelRequestProcessorException(Exception):
@@ -922,7 +926,8 @@ class ModelRequestProcessor(object):
                             del self._engine_processor_lookup[k]
                             self._engine_processor_lookup.pop(k, None)
                             gc.collect()
-                            torch.cuda.empty_cache()
+                            if torch:
+                                torch.cuda.empty_cache()
                 cleanup = False
                 model_monitor_update = False
             except Exception as ex:

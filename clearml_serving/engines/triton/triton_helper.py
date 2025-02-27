@@ -540,6 +540,12 @@ def main():
     parser.add_argument(
         '--t-log-verbose', type=str,
         help='<integer> Triton server logging verbosity (default disabled)')
+    parser.add_argument(
+        '--t-exit-on-error', type=bool, default=True,
+        help='Exits the inference server if any error occurs during initialization.'
+             'Recommended to set to True to catch any unanticipated errors.'
+             'False prevents single models breaking the whole tritonserver.'
+    )
 
     args = parser.parse_args()
 
