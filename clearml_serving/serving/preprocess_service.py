@@ -675,68 +675,6 @@ class VllmPreprocessRequest(BasePreprocessRequest):
                 return s.connect_ex(('localhost', port)) == 0
         if not is_port_in_use(8000):
             prometheus_client.start_http_server(8000)
-
-        vllm_engine_config = {
-            "model":f"{local_file_name}/model",
-            "tokenizer":f"{local_file_name}/tokenizer",
-            "disable_log_requests": True,
-            "disable_log_stats": False,
-            "gpu_memory_utilization": 0.9,
-            "quantization": None,
-            "enforce_eager": True,
-            "served_model_name": "ai_operator_hyp22v4"
-        }
-        vllm_model_config = {
-            "lora_modules": None, # [LoRAModulePath(name=a, path=b)]
-            "prompt_adapters": None, # [PromptAdapterPath(name=a, path=b)]
-            "response_role": "assistant",
-            "chat_template": None,
-            "return_tokens_as_token_ids": False,
-            "max_log_len": None
-        }
-
-        self.engine_args = AsyncEngineArgs(**vllm_engine_config)
-        self.async_engine_client = AsyncLLMEngine.from_engine_args(self.engine_args, usage_context=UsageContext.OPENAI_API_SERVER)
-
-
-        model_config = self.async_engine_client.engine.get_model_config()
-
-        request_logger = RequestLogger(max_log_len=vllm_model_config["max_log_len"])
-
-        self.openai_serving_chat = OpenAIServingChat(
-            self.async_engine_client,
-            model_config,
-            served_model_names=[vllm_engine_config["served_model_name"]],
-            response_role=vllm_model_config["response_role"],
-            lora_modules=vllm_model_config["lora_modules"],
-            prompt_adapters=vllm_model_config["prompt_adapters"],
-            request_logger=request_logger,
-            chat_template=vllm_model_config["chat_template"],
-            return_tokens_as_token_ids=vllm_model_config["return_tokens_as_token_ids"]
-        )
-        self.openai_serving_completion = OpenAIServingCompletion(
-            self.async_engine_client,
-            model_config,
-            served_model_names=[vllm_engine_config["served_model_name"]],
-            lora_modules=vllm_model_config["lora_modules"],
-            prompt_adapters=vllm_model_config["prompt_adapters"],
-            request_logger=request_logger,
-            return_tokens_as_token_ids=vllm_model_config["return_tokens_as_token_ids"]
-        )
-        self.openai_serving_embedding = OpenAIServingEmbedding(
-            self.async_engine_client,
-            model_config,
-            served_model_names=[vllm_engine_config["served_model_name"]],
-            request_logger=request_logger
-        )
-        self.openai_serving_tokenization = OpenAIServingTokenization(
-            self.async_engine_client,
-            model_config,
-            served_model_names=[vllm_engine_config["served_model_name"]],
-            lora_modules=vllm_model_config["lora_modules"],
-            request_logger=request_logger,
-            chat_template=vllm_model_config["chat_template"]
-        )
         # override `send_request` method with the async version
         self._preprocess.__class__.send_request = VllmPreprocessRequest._preprocess_send_request
 
@@ -818,7 +756,7 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         )
         request = CompletionRequest(**body)
         logger.info(f"Received chat completion request: {request}")
-        generator = await self.openai_serving_completion.create_completion(
+        generator = await self._model["openai_serving_completion"].create_completion(
             request=request,
             raw_request=raw_request
         )
@@ -835,16 +773,13 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         The actual processing function.
         We run the process in this context
         """
-        # if self._preprocess is not None and hasattr(self._preprocess, 'chat_completion'):
-        #     return await self._preprocess.chat_completion(data, state, collect_custom_statistics_fn)
-        # return None
         if REMOVE_WEB_ADDITIONAL_PROMPTS:
             if "messages" in body:
                 body["messages"] = remove_extra_system_prompts(body["messages"])
 
         request = ChatCompletionRequest(**body)
         logger.info(f"Received chat completion request: {request}")
-        generator = await self.openai_serving_chat.create_chat_completion(
+        generator = await self._model["self.openai_serving_chat"].create_chat_completion(
             request=request, raw_request=None
         )
         if isinstance(generator, ErrorResponse):

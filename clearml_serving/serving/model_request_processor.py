@@ -1241,7 +1241,7 @@ class ModelRequestProcessor(object):
                 if processor.is_process_async \
                 else processor.chat_completion(preprocessed, state, stats_collect_fn)
         else:
-            raise ValueError(f"wrong url_type: expected 'completions' and 'chat/completions', got {serve_type}")
+            raise ValueError(f"wrong url_type: expected 'process', 'completions' or 'chat/completions', got {serve_type}")
         # noinspection PyUnresolvedReferences
         return_value = await processor.postprocess(processed, state, stats_collect_fn) \
             if processor.is_postprocess_async \
