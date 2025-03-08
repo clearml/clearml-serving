@@ -561,7 +561,7 @@ def main():
             setattr(args, args_var, type(t)(v) if t is not None else v)
 
     # noinspection PyProtectedMember
-    serving_task = ModelRequestProcessor._get_control_plane_task(task_id=args.inference_task_id)
+    serving_task = ModelRequestProcessor._get_control_plane_task(task_id=args.serving_id)
 
     task = Task.init(
         project_name=args.project or serving_task.get_project_name() or "serving",

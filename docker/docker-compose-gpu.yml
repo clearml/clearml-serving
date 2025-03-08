@@ -1,0 +1,146 @@
+version: "3"
+
+services:
+  zookeeper:
+    image: bitnami/zookeeper:3.7.0
+    container_name: clearml-serving-zookeeper
+    # ports:
+      # - "2181:2181"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      - clearml-serving-backend
+
+  kafka:
+    image: bitnami/kafka:3.1.1
+    container_name: clearml-serving-kafka
+    # ports:
+      # - "9092:9092"
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://clearml-serving-kafka:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://clearml-serving-kafka:9092
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=clearml-serving-zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CREATE_TOPICS="topic_test:1:1"
+    depends_on:
+      - zookeeper
+    networks:
+      - clearml-serving-backend
+
+  prometheus:
+    image: prom/prometheus:v2.34.0
+    container_name: clearml-serving-prometheus
+    volumes:
+      - ./prometheus.yml:/prometheus.yml
+    command:
+      - '--config.file=/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    # ports:
+      # - "9090:9090"
+    depends_on:
+      - clearml-serving-statistics
+    networks:
+      - clearml-serving-backend
+
+  alertmanager:
+    image: prom/alertmanager:v0.23.0
+    container_name: clearml-serving-alertmanager
+    restart: unless-stopped
+    # ports:
+      # - "9093:9093"
+    depends_on:
+      - prometheus
+      - grafana
+    networks:
+      - clearml-serving-backend
+
+  grafana:
+    image: grafana/grafana:8.4.4-ubuntu
+    container_name: clearml-serving-grafana
+    volumes:
+      - './datasource.yml:/etc/grafana/provisioning/datasources/datasource.yaml'
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - clearml-serving-backend
+
+
+  clearml-serving-inference:
+    image: clearml-serving-inference:latest
+    container_name: clearml-serving-inference
+    restart: unless-stopped
+    # optimize perforamnce
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "8080:8080"
+    environment:
+      CLEARML_WEB_HOST: ${CLEARML_WEB_HOST:-https://app.clear.ml}
+      CLEARML_API_HOST: ${CLEARML_API_HOST:-https://api.clear.ml}
+      CLEARML_FILES_HOST: ${CLEARML_FILES_HOST:-https://files.clear.ml}
+      CLEARML_API_ACCESS_KEY: ${CLEARML_API_ACCESS_KEY}
+      CLEARML_API_SECRET_KEY: ${CLEARML_API_SECRET_KEY}
+      CLEARML_SERVING_TASK_ID: ${CLEARML_SERVING_TASK_ID:-}
+      CLEARML_SERVING_PORT: ${CLEARML_SERVING_PORT:-8080}
+      CLEARML_SERVING_POLL_FREQ: ${CLEARML_SERVING_POLL_FREQ:-1.0}
+      CLEARML_DEFAULT_SERVE_SUFFIX: ${CLEARML_DEFAULT_SERVE_SUFFIX:-serve}
+      CLEARML_DEFAULT_BASE_SERVE_URL: ${CLEARML_DEFAULT_BASE_SERVE_URL:-http://127.0.0.1:8080/serve}
+      CLEARML_DEFAULT_KAFKA_SERVE_URL: ${CLEARML_DEFAULT_KAFKA_SERVE_URL:-clearml-serving-kafka:9092}
+      CLEARML_DEFAULT_TRITON_GRPC_ADDR: ${CLEARML_DEFAULT_TRITON_GRPC_ADDR:-}
+      CLEARML_USE_GUNICORN: ${CLEARML_USE_GUNICORN:-}
+      CLEARML_SERVING_NUM_PROCESS: ${CLEARML_SERVING_NUM_PROCESS:-}
+      CLEARML_EXTRA_PYTHON_PACKAGES: ${CLEARML_EXTRA_PYTHON_PACKAGES:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
+      AZURE_STORAGE_KEY: ${AZURE_STORAGE_KEY:-}
+    depends_on:
+      - kafka
+    networks:
+      - clearml-serving-backend
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+
+  clearml-serving-statistics:
+    image: allegroai/clearml-serving-statistics:latest
+    container_name: clearml-serving-statistics
+    restart: unless-stopped
+    # optimize perforamnce
+    security_opt:
+      - seccomp:unconfined
+    # ports:
+      # - "9999:9999"
+    environment:
+      CLEARML_WEB_HOST: ${CLEARML_WEB_HOST:-https://app.clear.ml}
+      CLEARML_API_HOST: ${CLEARML_API_HOST:-https://api.clear.ml}
+      CLEARML_FILES_HOST: ${CLEARML_FILES_HOST:-https://files.clear.ml}
+      CLEARML_API_ACCESS_KEY: ${CLEARML_API_ACCESS_KEY}
+      CLEARML_API_SECRET_KEY: ${CLEARML_API_SECRET_KEY}
+      CLEARML_SERVING_TASK_ID: ${CLEARML_SERVING_TASK_ID:-}
+      CLEARML_DEFAULT_KAFKA_SERVE_URL: ${CLEARML_DEFAULT_KAFKA_SERVE_URL:-clearml-serving-kafka:9092}
+      CLEARML_SERVING_POLL_FREQ: ${CLEARML_SERVING_POLL_FREQ:-1.0}
+    depends_on:
+      - kafka
+    networks:
+      - clearml-serving-backend
+
+
+networks:
+  clearml-serving-backend:
+    driver: bridge

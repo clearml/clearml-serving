@@ -103,6 +103,10 @@ cat docker/example.env
 ```bash
 cd docker && docker-compose --env-file example.env -f docker-compose.yml up 
 ```
+If running on a GPU instance, use gpu docker-compose file
+```bash
+cd docker && docker-compose --env-file example.env -f docker-compose-gpu.yml up 
+```
 If you need Triton support (keras/pytorch/onnx etc.), use the triton docker-compose file
 ```bash
 cd docker && docker-compose --env-file example.env -f docker-compose-triton.yml up 

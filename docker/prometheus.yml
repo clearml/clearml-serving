@@ -20,3 +20,10 @@ scrape_configs:
 
     static_configs:
       - targets: ['clearml-serving-statistics:9999']
+
+  - job_name: 'vllm'
+
+    scrape_interval: 5s
+
+    static_configs:
+      - targets: ['clearml-serving-inference']

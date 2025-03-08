@@ -14,6 +14,19 @@ from requests import post as request_post
 
 from .endpoints import ModelEndpoint
 
+# try:
+#     import prometheus_client
+#     from fastapi.responses import JSONResponse, StreamingResponse
+#     from vllm.entrypoints.openai.protocol import (
+#         ChatCompletionRequest,
+#         ChatCompletionResponse,
+#         CompletionRequest,
+#         ErrorResponse
+#     )
+#     from vllm.logger import init_logger
+# except ImportError:
+#     print("WARNING: install vllm==0.5.4 and prometheus_client==0.21.1 to serve vllm engine")
+
 
 class BasePreprocessRequest(object):
     __preprocessing_lookup = {}
@@ -598,65 +611,11 @@ class CustomAsyncPreprocessRequest(BasePreprocessRequest):
         return return_value.json()
 
 
-@BasePreprocessRequest.register_engine("vllm")
+@BasePreprocessRequest.register_engine("vllm", modules=["vllm", "fastapi"])
 class VllmPreprocessRequest(BasePreprocessRequest):
-    import prometheus_client
-
-    from typing import Any, Union, Optional, Callable
-
-    from fastapi.responses import JSONResponse, StreamingResponse
-
-    from vllm.engine.arg_utils import AsyncEngineArgs
-    from vllm.engine.async_llm_engine import AsyncLLMEngine
-    from vllm.entrypoints.logger import RequestLogger
-    # yapf conflicts with isort for this block
-    # yapf: disable
-    from vllm.entrypoints.openai.protocol import (
-        ChatCompletionRequest,
-        ChatCompletionResponse,
-        CompletionRequest,
-        ErrorResponse
-    )
-
-    # yapf: enable
-    from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
-    from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
-    from vllm.entrypoints.openai.serving_embedding import OpenAIServingEmbedding
-    from vllm.entrypoints.openai.serving_tokenization import OpenAIServingTokenization
-    from vllm.logger import init_logger
-    from vllm.usage.usage_lib import UsageContext
-    from vllm.entrypoints.openai.serving_engine import LoRAModulePath, PromptAdapterPath
-
-    logger = init_logger(__name__)
-
-    REMOVE_WEB_ADDITIONAL_PROMPTS = True
-
-    if VllmPreprocessRequest.asyncio_to_thread is None:
-        from asyncio import to_thread as asyncio_to_thread
-        VllmPreprocessRequest.asyncio_to_thread = asyncio_to_thread
-
-    def remove_extra_system_prompts(messages: list) -> list:
-        """
-        Removes all 'system' prompts except the last one.
-        
-        :param messages: List of message dicts with 'role' and 'content'.
-        :return: Modified list of messages with only the last 'system' prompt preserved.
-        """
-        # Фильтруем только системные сообщения
-        system_messages_indices = []
-        for i, msg in enumerate(messages):
-            if msg["role"] == "system":
-                system_messages_indices.append(i)
-            else:
-                break
-        
-        # Если есть больше одного системного сообщения, удалим все, кроме последнего
-        if len(system_messages_indices) > 1:
-            last_system_index = system_messages_indices[-1]
-            # Удаляем все системные сообщения, кроме последнего
-            messages = [msg for i, msg in enumerate(messages) if msg["role"] != "system" or i == last_system_index]
-        
-        return messages
+    asyncio_to_thread = None
+    _vllm = None
+    _fastapi = None
 
     class CustomRequest:
         def __init__(self, headers: Optional[dict] = None):
@@ -669,12 +628,39 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         super(VllmPreprocessRequest, self).__init__(
             model_endpoint=model_endpoint, task=task)
 
-        def is_port_in_use(port: int) -> bool:
-            import socket
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(('localhost', port)) == 0
-        if not is_port_in_use(8000):
-            prometheus_client.start_http_server(8000)
+        # load vLLM Modules
+        if self._vllm is None:
+            from vllm.entrypoints.openai.protocol import (
+                ChatCompletionRequest,
+                ChatCompletionResponse,
+                CompletionRequest,
+                ErrorResponse
+            )
+            self._vllm = {}
+            self._vllm["chat_completion_request"] = ChatCompletionRequest
+            self._vllm["chat_completion_response"] = ChatCompletionResponse
+            self._vllm["completion_request"] = CompletionRequest
+            self._vllm["error_response"] = ErrorResponse
+
+        if self._fastapi is None:
+            from fastapi.responses import JSONResponse, StreamingResponse
+            self._fastapi = {}
+            self._fastapi["json_response"] = JSONResponse
+            self._fastapi["streaming_response"] = StreamingResponse
+
+        from vllm.logger import init_logger
+        self.logger = init_logger(__name__)
+
+        if VllmPreprocessRequest.asyncio_to_thread is None:
+            from asyncio import to_thread as asyncio_to_thread
+            VllmPreprocessRequest.asyncio_to_thread = asyncio_to_thread
+
+        import socket
+        import prometheus_client
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if not s.connect_ex(('localhost', 8000)) == 0:
+                prometheus_client.start_http_server(8000)
+
         # override `send_request` method with the async version
         self._preprocess.__class__.send_request = VllmPreprocessRequest._preprocess_send_request
 
@@ -738,15 +724,11 @@ class VllmPreprocessRequest(BasePreprocessRequest):
             return await self._preprocess.postprocess(data, state, collect_custom_statistics_fn)
         return data
 
-
     async def completions(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
         """
         The actual processing function.
         We run the process in this context
         """
-        if REMOVE_WEB_ADDITIONAL_PROMPTS:
-            if "messages" in body:
-                body["messages"] = remove_extra_system_prompts(body["messages"])
                 
         raw_request = CustomRequest(
             headers = {
@@ -754,18 +736,18 @@ class VllmPreprocessRequest(BasePreprocessRequest):
                 "tracestate": None
             }
         )
-        request = CompletionRequest(**body)
-        logger.info(f"Received chat completion request: {request}")
+        request = self._vllm["completion_request"](**data)
+        self.logger.info(f"Received chat completion request: {request}")
         generator = await self._model["openai_serving_completion"].create_completion(
             request=request,
             raw_request=raw_request
         )
-        if isinstance(generator, ErrorResponse):
-            return JSONResponse(content=generator.model_dump(), status_code=generator.code)
+        if isinstance(generator, self._vllm["error_response"]):
+            return self._fastapi["json_response"](content=generator.model_dump(), status_code=generator.code)
         if request.stream:
-            return StreamingResponse(content=generator, media_type="text/event-stream")
+            return self._fastapi["streaming_response"](content=generator, media_type="text/event-stream")
         else:
-            return JSONResponse(content=generator.model_dump())
+            return self._fastapi["json_response"](content=generator.model_dump())
 
 
     async def chat_completions(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
@@ -773,30 +755,27 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         The actual processing function.
         We run the process in this context
         """
-        if REMOVE_WEB_ADDITIONAL_PROMPTS:
-            if "messages" in body:
-                body["messages"] = remove_extra_system_prompts(body["messages"])
 
-        request = ChatCompletionRequest(**body)
-        logger.info(f"Received chat completion request: {request}")
-        generator = await self._model["self.openai_serving_chat"].create_chat_completion(
+        request = self._vllm["chat_completion_request"](**data)
+        self.logger.info(f"Received chat completion request: {request}")
+        generator = await self._model["openai_serving_chat"].create_chat_completion(
             request=request, raw_request=None
         )
-        if isinstance(generator, ErrorResponse):
-            return JSONResponse(content=generator.model_dump(), status_code=generator.code)
+        if isinstance(generator, self._vllm["error_response"]):
+            return self._fastapi["json_response"](content=generator.model_dump(), status_code=generator.code)
         if request.stream:
-            return StreamingResponse(content=generator, media_type="text/event-stream")
+            return self._fastapi["streaming_response"](content=generator, media_type="text/event-stream")
         else:
-            assert isinstance(generator, ChatCompletionResponse)
-            return JSONResponse(content=generator.model_dump())
+            assert isinstance(generator, self._vllm["chat_completion_response"])
+            return self._fastapi["json_response"](content=generator.model_dump())
 
     @staticmethod
     async def _preprocess_send_request(_, endpoint: str, version: str = None, data: dict = None) -> Optional[dict]:
-        endpoint = "{}/{}".format(endpoint.strip("/"), version.strip("/")) if version else endpoint.strip("/")
+        endpoint = "/openai/v1/{}".format(endpoint.strip("/"))
         base_url = BasePreprocessRequest.get_server_config().get("base_serving_url")
         base_url = (base_url or BasePreprocessRequest._default_serving_base_url).strip("/")
         url = "{}/{}".format(base_url, endpoint.strip("/"))
-        return_value = await CustomAsyncPreprocessRequest.asyncio_to_thread(
+        return_value = await VllmPreprocessRequest.asyncio_to_thread(
             request_post, url, json=data, timeout=BasePreprocessRequest._timeout)
         if not return_value.ok:
             return None
