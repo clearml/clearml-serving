@@ -735,11 +735,10 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         We run the process in this context
         """
         request, raw_request = data["request"], data["raw_request"]
+        # analog of completion(raw_request) in https://github.com/vllm-project/vllm/blob/v0.7.3/vllm/entrypoints/openai/api_server.py#L405
         handler = self._model["openai_serving_completion"]
         if handler is None:
             return self._model["openai_serving"].create_error_response(message="The model does not support Completions API")
-        # request = self._vllm["completion_request"](**data)
-        # self.logger.info(f"Received chat completion request: {request}")
         generator = await handler.create_completion(request=request, raw_request=raw_request)
         if isinstance(generator, self._vllm["error_response"]):
             return self._fastapi["json_response"](content=generator.model_dump(), status_code=generator.code)
@@ -754,11 +753,10 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         We run the process in this context
         """
         request, raw_request = data["request"], data["raw_request"]
-        handler = self._model["openai_serving_chat"] # analog of chat(raw_request) in https://github.com/vllm-project/vllm/blob/v0.7.3/vllm/entrypoints/openai/api_server.py#L405
+        # analog of chat(raw_request) in https://github.com/vllm-project/vllm/blob/v0.7.3/vllm/entrypoints/openai/api_server.py#L405
+        handler = self._model["openai_serving_chat"]
         if handler is None:
             return self._model["openai_serving"].create_error_response(message="The model does not support Chat Completions API")
-        # request = self._vllm["chat_completion_request"](**data)
-        # self.logger.info(f"Received chat completion request: {request}")
         generator = await handler.create_chat_completion(request=request, raw_request=raw_request)
         if isinstance(generator, self._vllm["error_response"]):
             return self._fastapi["json_response"](content=generator.model_dump(), status_code=generator.code)
