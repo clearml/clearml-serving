@@ -214,7 +214,7 @@ async def openai_serve_model(
 ):
     combined_request = {"request": request, "raw_request": raw_request}
     return_value = await process_with_exceptions(
-        base_url=request.get("model", None),
+        base_url=request.model,
         version=None,
         request_body=combined_request,
         serve_type=endpoint_type

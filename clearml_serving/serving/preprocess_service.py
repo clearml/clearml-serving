@@ -637,12 +637,14 @@ class VllmPreprocessRequest(BasePreprocessRequest):
                 ChatCompletionRequest,
                 ChatCompletionResponse,
                 CompletionRequest,
+                CompletionResponse,
                 ErrorResponse
             )
             self._vllm = {}
             self._vllm["chat_completion_request"] = ChatCompletionRequest
             self._vllm["chat_completion_response"] = ChatCompletionResponse
             self._vllm["completion_request"] = CompletionRequest
+            self._vllm["completion_response"] = CompletionResponse
             self._vllm["error_response"] = ErrorResponse
 
         if self._fastapi is None:
@@ -741,7 +743,7 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         generator = await handler.create_completion(request=request, raw_request=raw_request)
         if isinstance(generator, self._vllm["error_response"]):
             return self._fastapi["json_response"](content=generator.model_dump(), status_code=generator.code)
-        elif isinstance(generator, self._vllm["chat_completion_response"]):
+        elif isinstance(generator, self._vllm["completion_response"]):
             return self._fastapi["json_response"](content=generator.model_dump())
         return self._fastapi["streaming_response"](content=generator, media_type="text/event-stream")
 
