@@ -1,8 +1,10 @@
 """Hugginface preprocessing module for ClearML Serving."""
-from typing import Any, Optional
+from typing import Any, Optional, List, Callable, Union
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.logger import RequestLogger
+from vllm.entrypoints.openai.serving_engine import OpenAIServing
+from vllm.entrypoints.openai.serving_models import OpenAIServingModels
 from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
 from vllm.entrypoints.openai.serving_embedding import OpenAIServingEmbedding
@@ -19,7 +21,13 @@ class Preprocess:
         self.model_endpoint = None
 
     def load(self, local_file_name: str) -> Optional[Any]:  # noqa
-        vllm_engine_config = {
+
+        @dataclass
+        class BaseModelPath:
+            name: str
+            model_path: str
+
+        self.vllm_engine_config = {
             "model": local_file_name,
             "tokenizer": local_file_name,
             "disable_log_requests": True,
@@ -28,9 +36,10 @@ class Preprocess:
             "quantization": None,
             "enforce_eager": True,
             "served_model_name": "test_vllm",
-            "dtype": "float16"
+            "dtype": "float16",
+            "max_model_len": 8192
         }
-        vllm_model_config = {
+        self.vllm_model_config = {
             "lora_modules": None, # [LoRAModulePath(name=a, path=b)]
             "prompt_adapters": None, # [PromptAdapterPath(name=a, path=b)]
             "response_role": "assistant",
@@ -39,43 +48,57 @@ class Preprocess:
             "max_log_len": None
         }
         self._model = {}
-        engine_args = AsyncEngineArgs(**vllm_engine_config)
-        async_engine_client = AsyncLLMEngine.from_engine_args(engine_args, usage_context=UsageContext.OPENAI_API_SERVER)
-        model_config = async_engine_client.engine.get_model_config()
-        request_logger = RequestLogger(max_log_len=vllm_model_config["max_log_len"])
+        self.engine_args = AsyncEngineArgs(**self.vllm_engine_config)
+        async_engine_client = AsyncLLMEngine.from_engine_args(self.engine_args, usage_context=UsageContext.OPENAI_API_SERVER)
+        self.model_config = async_engine_client.engine.get_model_config()
+        request_logger = RequestLogger(max_log_len=self.vllm_model_config["max_log_len"])
+        self._model["openai_serving_models"] = OpenAIServingModels(
+            async_engine_client,
+            self.model_config,
+            [BaseModelPath(name=self.vllm_engine_config["served_model_name"], model_path=self.vllm_engine_config["model"])],
+            lora_modules=self.vllm_model_config["lora_modules"],
+            prompt_adapters=self.vllm_model_config["prompt_adapters"],
+        )
+        self._model["openai_serving"] = OpenAIServing(
+            async_engine_client,
+            self.model_config,
+            self._model["openai_serving_models"],
+            request_logger=request_logger,
+            return_tokens_as_token_ids=self.vllm_model_config["return_tokens_as_token_ids"]
+        )
         self._model["openai_serving_chat"] = OpenAIServingChat(
             async_engine_client,
-            model_config,
-            served_model_names=[vllm_engine_config["served_model_name"]],
-            response_role=vllm_model_config["response_role"],
-            lora_modules=vllm_model_config["lora_modules"],
-            prompt_adapters=vllm_model_config["prompt_adapters"],
+            self.model_config,
+            served_model_names=[self.vllm_engine_config["served_model_name"]],
+            response_role=self.vllm_model_config["response_role"],
+            lora_modules=self.vllm_model_config["lora_modules"],
+            prompt_adapters=self.vllm_model_config["prompt_adapters"],
             request_logger=request_logger,
-            chat_template=vllm_model_config["chat_template"],
-            return_tokens_as_token_ids=vllm_model_config["return_tokens_as_token_ids"]
-        )
+            chat_template=self.vllm_model_config["chat_template"],
+            return_tokens_as_token_ids=self.vllm_model_config["return_tokens_as_token_ids"]
+        ) if self.model_config.runner_type == "generate" else None
         self._model["openai_serving_completion"] = OpenAIServingCompletion(
             async_engine_client,
-            model_config,
-            served_model_names=[vllm_engine_config["served_model_name"]],
-            lora_modules=vllm_model_config["lora_modules"],
-            prompt_adapters=vllm_model_config["prompt_adapters"],
+            self.model_config,
+            served_model_names=[self.vllm_engine_config["served_model_name"]],
+            lora_modules=self.vllm_model_config["lora_modules"],
+            prompt_adapters=self.vllm_model_config["prompt_adapters"],
             request_logger=request_logger,
-            return_tokens_as_token_ids=vllm_model_config["return_tokens_as_token_ids"]
-        )
+            return_tokens_as_token_ids=self.vllm_model_config["return_tokens_as_token_ids"]
+        ) if self.model_config.runner_type == "generate" else None
         self._model["openai_serving_embedding"] = OpenAIServingEmbedding(
             async_engine_client,
-            model_config,
-            served_model_names=[vllm_engine_config["served_model_name"]],
+            self.model_config,
+            served_model_names=[self.vllm_engine_config["served_model_name"]],
             request_logger=request_logger
-        )
+        ) if self.model_config.task == "embed" else None
         self._model["openai_serving_tokenization"] = OpenAIServingTokenization(
             async_engine_client,
-            model_config,
-            served_model_names=[vllm_engine_config["served_model_name"]],
-            lora_modules=vllm_model_config["lora_modules"],
+            self.model_config,
+            served_model_names=[self.vllm_engine_config["served_model_name"]],
+            lora_modules=self.vllm_model_config["lora_modules"],
             request_logger=request_logger,
-            chat_template=vllm_model_config["chat_template"]
+            chat_template=self.vllm_model_config["chat_template"]
         )
         return self._model
 
@@ -91,12 +114,12 @@ class Preprocess:
             messages = [msg for i, msg in enumerate(messages) if msg["role"] != "system" or i == last_system_index]
         return messages
 
-    def preprocess(
+    async def preprocess(
         self,
         body: Union[bytes, dict],
         state: dict,
         collect_custom_statistics_fn: Optional[Callable[[dict], None]],
     ) -> Any:  # noqa
-        if "messages" in body:
-            body["messages"] = self.remove_extra_system_prompts(body["messages"])
+        if "messages" in body["request"]:
+            body["request"]["messages"] = self.remove_extra_system_prompts(body["request"]["messages"])
         return body

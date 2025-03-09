@@ -613,6 +613,9 @@ class CustomAsyncPreprocessRequest(BasePreprocessRequest):
 
 @BasePreprocessRequest.register_engine("vllm", modules=["vllm", "fastapi"])
 class VllmPreprocessRequest(BasePreprocessRequest):
+    is_preprocess_async = True
+    is_process_async = True
+    is_postprocess_async = True
     asyncio_to_thread = None
     _vllm = None
     _fastapi = None
@@ -729,25 +732,18 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         The actual processing function.
         We run the process in this context
         """
-                
-        raw_request = CustomRequest(
-            headers = {
-                "traceparent": None,
-                "tracestate": None
-            }
-        )
-        request = self._vllm["completion_request"](**data)
-        self.logger.info(f"Received chat completion request: {request}")
-        generator = await self._model["openai_serving_completion"].create_completion(
-            request=request,
-            raw_request=raw_request
-        )
+        request, raw_request = data["request"], data["raw_request"]
+        handler = self._model["openai_serving_completion"]
+        if handler is None:
+            return self._model["openai_serving"].create_error_response(message="The model does not support Completions API")
+        # request = self._vllm["completion_request"](**data)
+        # self.logger.info(f"Received chat completion request: {request}")
+        generator = await handler.create_completion(request=request, raw_request=raw_request)
         if isinstance(generator, self._vllm["error_response"]):
             return self._fastapi["json_response"](content=generator.model_dump(), status_code=generator.code)
-        if request.stream:
-            return self._fastapi["streaming_response"](content=generator, media_type="text/event-stream")
-        else:
+        elif isinstance(generator, self._vllm["chat_completion_response"]):
             return self._fastapi["json_response"](content=generator.model_dump())
+        return self._fastapi["streaming_response"](content=generator, media_type="text/event-stream")
 
 
     async def chat_completions(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
@@ -755,19 +751,19 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         The actual processing function.
         We run the process in this context
         """
-
-        request = self._vllm["chat_completion_request"](**data)
-        self.logger.info(f"Received chat completion request: {request}")
-        generator = await self._model["openai_serving_chat"].create_chat_completion(
-            request=request, raw_request=None
-        )
+        request, raw_request = data["request"], data["raw_request"]
+        handler = self._model["openai_serving_chat"] # analog of chat(raw_request) in https://github.com/vllm-project/vllm/blob/v0.7.3/vllm/entrypoints/openai/api_server.py#L405
+        if handler is None:
+            return self._model["openai_serving"].create_error_response(message="The model does not support Chat Completions API")
+        # request = self._vllm["chat_completion_request"](**data)
+        # self.logger.info(f"Received chat completion request: {request}")
+        generator = await handler.create_chat_completion(request=request, raw_request=raw_request)
         if isinstance(generator, self._vllm["error_response"]):
             return self._fastapi["json_response"](content=generator.model_dump(), status_code=generator.code)
-        if request.stream:
-            return self._fastapi["streaming_response"](content=generator, media_type="text/event-stream")
-        else:
-            assert isinstance(generator, self._vllm["chat_completion_response"])
+        elif isinstance(generator, self._vllm["chat_completion_response"]):
             return self._fastapi["json_response"](content=generator.model_dump())
+        return self._fastapi["streaming_response"](content=generator, media_type="text/event-stream")
+
 
     @staticmethod
     async def _preprocess_send_request(_, endpoint: str, version: str = None, data: dict = None) -> Optional[dict]:

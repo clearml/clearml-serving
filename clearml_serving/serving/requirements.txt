@@ -19,4 +19,4 @@ requests>=2.31.0
 kafka-python>=2.0.2,<2.1
 lz4>=4.0.0,<5
 prometheus_client==0.21.1
-vllm==0.5.4
+vllm==0.7.3

@@ -4,10 +4,12 @@ import traceback
 import gzip
 import asyncio
 
-from fastapi import FastAPI, Request, Response, APIRouter, HTTPException
+from fastapi import FastAPI, Request, Response, APIRouter, HTTPException, Depends
 from fastapi.routing import APIRoute
 from fastapi.responses import PlainTextResponse
 from grpc.aio import AioRpcError
+
+from vllm.entrypoints.openai.protocol import ChatCompletionRequest, CompletionRequest
 
 from starlette.background import BackgroundTask
 
@@ -194,16 +196,27 @@ async def base_serve_model(
     return return_value
 
 
-@router.post("/openai/v1/{endpoint_type:path}")
-@router.post("/openai/v1/{endpoint_type:path}/")
+async def validate_json_request(raw_request: Request):
+    content_type = raw_request.headers.get("content-type", "").lower()
+    media_type = content_type.split(";", maxsplit=1)[0]
+    if media_type != "application/json":
+        raise HTTPException(
+            status_code=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported Media Type: Only 'application/json' is allowed"
+        )
+
+@router.post("/openai/v1/{endpoint_type:path}", dependencies=[Depends(validate_json_request)])
+@router.post("/openai/v1/{endpoint_type:path}/", dependencies=[Depends(validate_json_request)])
 async def openai_serve_model(
     endpoint_type: str,
-    request: Union[bytes, Dict[Any, Any]] = None
+    request: Union[CompletionRequest, ChatCompletionRequest],
+    raw_request: Request
 ):
+    combined_request = {"request": request, "raw_request": raw_request}
     return_value = await process_with_exceptions(
         base_url=request.get("model", None),
         version=None,
-        request_body=request,
+        request_body=combined_request,
         serve_type=endpoint_type
     )
     return return_value
