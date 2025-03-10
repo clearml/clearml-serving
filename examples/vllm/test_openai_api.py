@@ -15,7 +15,7 @@ def main(model_name: str = "test_vllm"):
         top_p=1.0
     )
 
-    print(f"ChatCompletion: {chat_response.choices[0].message}")
+    print(f"ChatCompletion: {chat_response.choices[0].message.content}")
 
     comp_response = client.completions.create(
         model=model_name,
