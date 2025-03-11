@@ -818,7 +818,7 @@ class VllmEngine(Singleton):
     ) -> Any:
         request, raw_request = data["request"], data["raw_request"]
         models_ = await self.openai_serving_models.show_available_models()
-        return JSONResponse(content=models_.model_dump())
+        return self._fastapi["json_response"](content=models_.model_dump())
 
 
 @BasePreprocessRequest.register_engine("vllm", modules=["vllm", "fastapi"])
