@@ -10,7 +10,6 @@ class Preprocess:
         self.model_endpoint = None
 
     def load(self, local_file_name: str) -> Optional[Any]:  # noqa
-
         vllm_model_config = {
             "lora_modules": None, # [LoRAModulePath(name=a, path=b)]
             "prompt_adapters": None, # [PromptAdapterPath(name=a, path=b)]

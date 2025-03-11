@@ -1225,23 +1225,28 @@ class ModelRequestProcessor(object):
         preprocessed = await processor.preprocess(body, state, stats_collect_fn) \
             if processor.is_preprocess_async \
             else processor.preprocess(body, state, stats_collect_fn)
-        if serve_type == "process":
-            # noinspection PyUnresolvedReferences
-            processed = await processor.process(preprocessed, state, stats_collect_fn) \
-                if processor.is_process_async \
-                else processor.process(preprocessed, state, stats_collect_fn)
-        elif serve_type == "completions":
-            # noinspection PyUnresolvedReferences
-            processed = await processor.completions(preprocessed, state, stats_collect_fn) \
-                if processor.is_process_async \
-                else processor.completions(preprocessed, state, stats_collect_fn)
-        elif serve_type == "chat/completions":
-            # noinspection PyUnresolvedReferences
-            processed = await processor.chat_completions(preprocessed, state, stats_collect_fn) \
-                if processor.is_process_async \
-                else processor.chat_completions(preprocessed, state, stats_collect_fn)
-        else:
-            raise ValueError(f"wrong url_type: expected 'process', 'completions' or 'chat/completions', got {serve_type}")
+        processed_func = getattr(processor, serve_type.replace("/", "_"))
+        # noinspection PyUnresolvedReferences
+        processed = await processed_func(preprocessed, state, stats_collect_fn) \
+            if processor.is_process_async \
+            else processed_func(preprocessed, state, stats_collect_fn)
+        # if serve_type == "process":
+        #     # noinspection PyUnresolvedReferences
+        #     processed = await processor.process(preprocessed, state, stats_collect_fn) \
+        #         if processor.is_process_async \
+        #         else processor.process(preprocessed, state, stats_collect_fn)
+        # elif serve_type == "completions":
+        #     # noinspection PyUnresolvedReferences
+        #     processed = await processor.completions(preprocessed, state, stats_collect_fn) \
+        #         if processor.is_process_async \
+        #         else processor.completions(preprocessed, state, stats_collect_fn)
+        # elif serve_type == "chat/completions":
+        #     # noinspection PyUnresolvedReferences
+        #     processed = await processor.chat_completions(preprocessed, state, stats_collect_fn) \
+        #         if processor.is_process_async \
+        #         else processor.chat_completions(preprocessed, state, stats_collect_fn)
+        # else:
+        #     raise ValueError(f"wrong url_type: expected 'process', 'completions' or 'chat/completions', got {serve_type}")
         # noinspection PyUnresolvedReferences
         return_value = await processor.postprocess(processed, state, stats_collect_fn) \
             if processor.is_postprocess_async \
