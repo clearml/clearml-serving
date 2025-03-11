@@ -32,8 +32,16 @@
 5. Test new endpoint (do notice the first call will trigger the model pulling, so it might take longer, from here on, it's all in memory):
 
     ```bash
-    python examples/vllm/test_openai_app.py
+    python examples/vllm/test_openai_api.py
     ```
+
+    **Available routes**:
+
+    + /v1/completions
+    + /v1/chat/completions
+    + /v1/models
+
+    see [test_openai_api.py](test_openai_api.py) for more information.
 
 NOTE!
 

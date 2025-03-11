@@ -206,7 +206,7 @@ async def validate_json_request(raw_request: Request):
         )
 
 @router.post("/openai/v1/{endpoint_type:path}", dependencies=[Depends(validate_json_request)])
-@router.post("/openai/v1/{endpoint_type:path}/", dependencies=[Depends(validate_json_request)])
+@router.get("/openai/v1/{endpoint_type:path}", dependencies=[Depends(validate_json_request)])
 async def openai_serve_model(
     endpoint_type: str,
     request: Union[CompletionRequest, ChatCompletionRequest],

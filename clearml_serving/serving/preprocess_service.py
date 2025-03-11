@@ -763,6 +763,14 @@ class VllmEngine(Singleton):
         )
         self.logger.info("Model {} was added to vllm engine".format(name))
         return None
+    
+    def remove_model(self, name: str) -> None:
+        self.openai_serving_models.base_model_paths = [
+            model for model in self.openai_serving_models.base_model_paths
+            if model.name != name
+        ]
+        self.logger.info("Model {} was removed from vllm engine".format(name))
+        return None
 
     async def completions(
         self,
