@@ -615,11 +615,38 @@ class VllmEngine(Singleton):
 
         # load vLLM Modules
         if self._vllm is None:
-            from vllm import entrypoints, engine, usage
-            self._vllm = {}
-            self._vllm["entrypoints"] = entrypoints
-            self._vllm["engine"] = engine
-            self._vllm["usage"] = usage
+            # from vllm import entrypoints, engine, usage
+            from vllm.engine.arg_utils import AsyncEngineArgs
+            from vllm.engine.async_llm_engine import AsyncLLMEngine
+            from vllm.entrypoints.logger import RequestLogger
+            from vllm.entrypoints.openai.serving_engine import OpenAIServing
+            from vllm.entrypoints.openai.serving_models import OpenAIServingModels, LoRAModulePath, PromptAdapterPath, BaseModelPath
+            from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
+            from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
+            from vllm.entrypoints.openai.serving_embedding import OpenAIServingEmbedding
+            from vllm.entrypoints.openai.serving_tokenization import OpenAIServingTokenization
+            from vllm.entrypoints.openai.protocol import ChatCompletionResponse, CompletionResponse, ErrorResponse
+            from vllm.entrypoints.chat_utils import ChatTemplateContentFormatOption
+            from vllm.usage.usage_lib import UsageContext
+            self._vllm = {
+                "AsyncEngineArgs": AsyncEngineArgs,
+                "AsyncLLMEngine": AsyncLLMEngine,
+                "RequestLogger": RequestLogger,
+                "OpenAIServing": OpenAIServing,
+                "OpenAIServingModels": OpenAIServingModels,
+                "LoRAModulePath": LoRAModulePath,
+                "PromptAdapterPath": PromptAdapterPath,
+                "BaseModelPath": BaseModelPath,
+                "OpenAIServingChat": OpenAIServingChat,
+                "OpenAIServingCompletion": OpenAIServingCompletion,
+                "OpenAIServingEmbedding": OpenAIServingEmbedding,
+                "OpenAIServingTokenization": OpenAIServingTokenization,
+                "ChatCompletionResponse": ChatCompletionResponse,
+                "CompletionResponse": CompletionResponse,
+                "ErrorResponse": ErrorResponse,
+                "ChatTemplateContentFormatOption": ChatTemplateContentFormatOption,
+                "UsageContext": UsageContext
+            }
 
         if self._fastapi is None:
             from fastapi.responses import JSONResponse, StreamingResponse
@@ -647,85 +674,75 @@ class VllmEngine(Singleton):
             self.add_models(name=name, model_path=model_path)
             return None
 
-        vllm_engine_config = json.loads(os.environ.get("VLLM_ENGINE_ARGS"))
-        engine_args = self._vllm["engine"].arg_utils.AsyncEngineArgs(**vllm_engine_config)
-        async_engine_client = self._vllm["engine"].async_llm_engine.AsyncLLMEngine.from_engine_args(
+        vllm_engine_config = json.loads(os.environ.get("VLLM_ENGINE_ARGS").replace("'", ""))
+        vllm_engine_config["model"] = model_path
+        vllm_engine_config["served_model_name"] = name
+        engine_args = self._vllm["AsyncEngineArgs"](**vllm_engine_config)
+        async_engine_client = self._vllm["AsyncLLMEngine"].from_engine_args(
             engine_args,
-            usage_context=self._vllm["usage"].usage_lib.UsageContext.OPENAI_API_SERVER
+            usage_context=self._vllm["UsageContext"].OPENAI_API_SERVER
         )
         model_config = async_engine_client.engine.get_model_config()
-        request_logger = self._vllm["entrypoints"].logger.RequestLogger(
+        request_logger = self._vllm["RequestLogger"](
             max_log_len=vllm_model_config["max_log_len"]
         )
-        self._model["openai_serving_models"] = self._vllm[
-                "entrypoints"
-            ].openai.serving_models.OpenAIServingModels(
-                async_engine_client,
-                model_config,
-                [
-                    self._vllm["entrypoints"].openai.serving_models.BaseModelPath(
-                        name=name,
-                        model_path=model_path
-                    )
-                ],
-                lora_modules=svllm_model_config["lora_modules"],
-                prompt_adapters=vllm_model_config["prompt_adapters"],
+        self._model["openai_serving_models"] = self._vllm["OpenAIServingModels"](
+            async_engine_client,
+            model_config,
+            [
+                self._vllm["BaseModelPath"](
+                    name=name,
+                    model_path=model_path
+                )
+            ],
+            lora_modules=vllm_model_config["lora_modules"],
+            prompt_adapters=vllm_model_config["prompt_adapters"],
         )
-        await self._model["openai_serving_models"].init_static_loras()
-        self._model["openai_serving"] = self._vllm[
-                "entrypoints"
-            ].openai.serving_engine.OpenAIServing(
-                async_engine_client,
-                model_config,
-                self._model["openai_serving_models"],
-                request_logger=request_logger,
-                return_tokens_as_token_ids=vllm_model_config["return_tokens_as_token_ids"]
+        # await self._model["openai_serving_models"].init_static_loras()
+        self._model["openai_serving"] = self._vllm["OpenAIServing"](
+            async_engine_client,
+            model_config,
+            self._model["openai_serving_models"],
+            request_logger=request_logger,
+            return_tokens_as_token_ids=vllm_model_config["return_tokens_as_token_ids"]
         )
-        self._model["openai_serving_chat"] = self._vllm[
-                "entrypoints"
-            ].openai.serving_chat.OpenAIServingChat(
-                async_engine_client,
-                model_config,
-                self._model["openai_serving_models"],
-                response_role=vllm_model_config["response_role"],
-                request_logger=request_logger,
-                chat_template=vllm_model_config["chat_template"],
-                chat_template_content_format=chat_settings["chat_template_content_format"],
-                return_tokens_as_token_ids=vllm_model_config["return_tokens_as_token_ids"],
-                enable_reasoning=chat_settings["enable_reasoning"],
-                reasoning_parser=chat_settings["reasoning_parser"],
-                enable_auto_tools=chat_settings["enable_auto_tools"],
-                tool_parser=chat_settings["tool_parser"],
-                enable_prompt_tokens_details=chat_settings["enable_prompt_tokens_details"]
+        self._model["openai_serving_chat"] = self._vllm["OpenAIServingChat"](
+            async_engine_client,
+            model_config,
+            self._model["openai_serving_models"],
+            response_role=vllm_model_config["response_role"],
+            request_logger=request_logger,
+            chat_template=vllm_model_config["chat_template"],
+            chat_template_content_format=chat_settings["chat_template_content_format"],
+            return_tokens_as_token_ids=vllm_model_config["return_tokens_as_token_ids"],
+            enable_reasoning=chat_settings["enable_reasoning"],
+            reasoning_parser=chat_settings["reasoning_parser"],
+            enable_auto_tools=chat_settings["enable_auto_tools"],
+            tool_parser=chat_settings["tool_parser"],
+            enable_prompt_tokens_details=chat_settings["enable_prompt_tokens_details"]
         ) if model_config.runner_type == "generate" else None
-        self._model["openai_serving_completion"] = self._vllm[
-                "entrypoints"
-            ].openai.serving_completion.OpenAIServingCompletion(
-                async_engine_client,
-                model_config,
-                self._model["openai_serving_models"],
-                request_logger=request_logger,
-                return_tokens_as_token_ids=vllm_model_config["return_tokens_as_token_ids"]
+        self._model["openai_serving_completion"] = self._vllm["OpenAIServingCompletion"](
+            async_engine_client,
+            model_config,
+            self._model["openai_serving_models"],
+            request_logger=request_logger,
+            return_tokens_as_token_ids=vllm_model_config["return_tokens_as_token_ids"]
         ) if model_config.runner_type == "generate" else None
-        self._model["openai_serving_embedding"] = self._vllm[
-                "entrypoints"
-            ].openai.serving_embedding.OpenAIServingEmbedding(
-                async_engine_client,
-                model_config,
-                self._model["openai_serving_models"],
-                request_logger=request_logger,
-                chat_template=vllm_model_config["chat_template"],
-                chat_template_content_format=chat_settings["chat_template_content_format"]
+        self._model["openai_serving_embedding"] = self._vllm["OpenAIServingEmbedding"](
+            async_engine_client,
+            model_config,
+            self._model["openai_serving_models"],
+            request_logger=request_logger,
+            chat_template=vllm_model_config["chat_template"],
+            chat_template_content_format=chat_settings["chat_template_content_format"]
         ) if model_config.task == "embed" else None
-        self._model["openai_serving_tokenization"] = self._vllm[
-                "entrypoints"
-            ].openai.serving_tokenization.OpenAIServingTokenization(
-                async_engine_client,
-                model_config,
-                self._model["openai_serving_models"],
-                request_logger=request_logger,
-                chat_template=vllm_model_config["chat_template"],
-                chat_template_content_format=chat_settings["chat_template_content_format"]
+        self._model["openai_serving_tokenization"] = self._vllm["OpenAIServingTokenization"](
+            async_engine_client,
+            model_config,
+            self._model["openai_serving_models"],
+            request_logger=request_logger,
+            chat_template=vllm_model_config["chat_template"],
+            chat_template_content_format=chat_settings["chat_template_content_format"]
         )
         self.logger.info("vLLM Engine was successfully initialized")
         self.is_already_loaded = True
@@ -733,7 +750,7 @@ class VllmEngine(Singleton):
 
     def add_models(self, name: str, model_path: str):
         self._model["openai_serving_models"].base_model_paths.append(
-            self._vllm["entrypoints"].openai.serving_models.BaseModelPath(
+            self._vllm["BaseModelPath"](
                 name=name,
                 model_path=model_path
             )
@@ -759,12 +776,11 @@ class VllmEngine(Singleton):
                 message="The model does not support Completions API"
             )
         generator = await handler.create_completion(request=request, raw_request=raw_request)
-        if isinstance(generator, self._vllm["entrypoints"].openai.protocol.ErrorResponse):
+        if isinstance(generator, self._vllm["ErrorResponse"]):
             return self._fastapi["json_response"](content=generator.model_dump(), status_code=generator.code)
-        elif isinstance(generator, self._vllm["entrypoints"].openai.protocol.CompletionResponse):
+        elif isinstance(generator, self._vllm["CompletionResponse"]):
             return self._fastapi["json_response"](content=generator.model_dump())
         return self._fastapi["streaming_response"](content=generator, media_type="text/event-stream")
-
 
     async def chat_completions(
         self,
@@ -784,11 +800,19 @@ class VllmEngine(Singleton):
                 message="The model does not support Chat Completions API"
             )
         generator = await handler.create_chat_completion(request=request, raw_request=raw_request)
-        if isinstance(generator, self._vllm["entrypoints"].openai.protocol.ErrorResponse):
+        if isinstance(generator, self._vllm["ErrorResponse"]):
             return self._fastapi["json_response"](content=generator.model_dump(), status_code=generator.code)
-        elif isinstance(generator, self._vllm["entrypoints"].openai.protocol.ChatCompletionResponse):
+        elif isinstance(generator, self._vllm["ChatCompletionResponse"]):
             return self._fastapi["json_response"](content=generator.model_dump())
         return self._fastapi["streaming_response"](content=generator, media_type="text/event-stream")
+
+    async def models(
+        self,
+        data: Any,
+        state: dict,
+        collect_custom_statistics_fn: Callable[[dict], None] = None
+    ) -> Any:
+        pass
 
 
 @BasePreprocessRequest.register_engine("vllm", modules=["vllm", "fastapi"])
@@ -881,7 +905,7 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         The actual processing function.
         We run the process in this context
         """
-        return self._vllm_engine.completions(data=data, state=state, collect_custom_statistics_fn=collect_custom_statistics_fn)
+        return await self._vllm_engine.completions(data=data, state=state, collect_custom_statistics_fn=collect_custom_statistics_fn)
 
 
     async def chat_completions(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
@@ -889,8 +913,15 @@ class VllmPreprocessRequest(BasePreprocessRequest):
         The actual processing function.
         We run the process in this context
         """
-        return self._vllm_engine.chat_completions(data=data, state=state, collect_custom_statistics_fn=collect_custom_statistics_fn)
+        return await self._vllm_engine.chat_completions(data=data, state=state, collect_custom_statistics_fn=collect_custom_statistics_fn)
 
+
+    async def models(self, data: Any, state: dict, collect_custom_statistics_fn: Callable[[dict], None] = None) -> Any:
+        """
+        The actual processing function.
+        We run the process in this context
+        """
+        return self._vllm_engine.models(data=data, state=state, collect_custom_statistics_fn=collect_custom_statistics_fn)
 
     @staticmethod
     async def _preprocess_send_request(_, endpoint: str, version: str = None, data: dict = None) -> Optional[dict]:

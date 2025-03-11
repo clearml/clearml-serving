@@ -105,7 +105,7 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
       AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
       AZURE_STORAGE_KEY: ${AZURE_STORAGE_KEY:-}
-      VLLM_ENGINE_ARGS: ${VLLM_ENGINE_ARGS:-'{"disable_log_requests":true,"disable_log_stats":false,"gpu_memory_utilization":0.95,"quantization":null,"enforce_eager":true}'}
+      VLLM_ENGINE_ARGS: ${VLLM_ENGINE_ARGS:-'{"disable_log_requests":true,"disable_log_stats":false,"gpu_memory_utilization":0.95,"enforce_eager":true}'}
     depends_on:
       - kafka
     networks:
