@@ -9,6 +9,8 @@ from fastapi.routing import APIRoute
 from fastapi.responses import PlainTextResponse
 from grpc.aio import AioRpcError
 
+from http import HTTPStatus
+
 from vllm.entrypoints.openai.protocol import ChatCompletionRequest, CompletionRequest
 
 from starlette.background import BackgroundTask
@@ -115,14 +117,14 @@ async def cuda_exception_handler(request, exc):
 async def process_with_exceptions(
     base_url: str,
     version: Optional[str],
-    request_body: Union[bytes, Dict[Any, Any]],
+    request: Union[bytes, Dict[Any, Any]],
     serve_type: str
 ):
     try:
         return_value = await processor.process_request(
             base_url=base_url,
             version=version,
-            request_body=request_body,
+            request_body=request,
             serve_type=serve_type
         )
     except EndpointNotFoundException as ex:
@@ -130,21 +132,21 @@ async def process_with_exceptions(
     except (EndpointModelLoadException, EndpointBackendEngineException) as ex:
         session_logger.report_text(
             "[{}] Exception [{}] {} while processing request: {}\n{}".format(
-                instance_id, type(ex), ex, request_body, "".join(traceback.format_exc())
+                instance_id, type(ex), ex, request, "".join(traceback.format_exc())
             )
         )
         raise HTTPException(status_code=422, detail="Error [{}] processing request: {}".format(type(ex), ex))
     except ServingInitializationException as ex:
         session_logger.report_text(
             "[{}] Exception [{}] {} while loading serving inference: {}\n{}".format(
-                instance_id, type(ex), ex, request_body, "".join(traceback.format_exc())
+                instance_id, type(ex), ex, request, "".join(traceback.format_exc())
             )
         )
         raise HTTPException(status_code=500, detail="Error [{}] processing request: {}".format(type(ex), ex))
     except ValueError as ex:
         session_logger.report_text(
             "[{}] Exception [{}] {} while processing request: {}\n{}".format(
-                instance_id, type(ex), ex, request_body, "".join(traceback.format_exc())
+                instance_id, type(ex), ex, request, "".join(traceback.format_exc())
             )
         )
         if "CUDA out of memory. " in str(ex) or "NVML_SUCCESS == r INTERNAL ASSERT FAILED" in str(ex):
@@ -154,7 +156,7 @@ async def process_with_exceptions(
     except AioRpcError as ex:
         if grpc_aio_verbose_errors and ex.code() in grpc_aio_verbose_errors:
             session_logger.report_text(
-                "[{}] Exception [AioRpcError] {} while processing request: {}".format(instance_id, ex, request_body)
+                "[{}] Exception [AioRpcError] {} while processing request: {}".format(instance_id, ex, request)
             )
         elif not grpc_aio_ignore_errors or ex.code() not in grpc_aio_ignore_errors:
             session_logger.report_text("[{}] Exception [AioRpcError] status={} ".format(instance_id, ex.code()))
@@ -164,7 +166,7 @@ async def process_with_exceptions(
     except Exception as ex:
         session_logger.report_text(
             "[{}] Exception [{}] {} while processing request: {}\n{}".format(
-                instance_id, type(ex), ex, request_body, "".join(traceback.format_exc())
+                instance_id, type(ex), ex, request, "".join(traceback.format_exc())
             )
         )
         raise HTTPException(status_code=500, detail="Error  [{}] processing request: {}".format(type(ex), ex))
