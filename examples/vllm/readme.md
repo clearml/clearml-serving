@@ -11,12 +11,7 @@
     clearml-serving --id <service_id> model add --model-id <model_id> --engine vllm --endpoint "test_vllm" --preprocess "examples/vllm/preprocess.py"
     ```
 
-4. If you already have the `clearml-serving` docker-compose running, it might take it a minute or two to sync with the new endpoint.
-
-    Or you can run the clearml-serving container independently:
-    ```
-    docker run -v ~/clearml.conf:/root/clearml.conf -p 8080:8080 -e CLEARML_SERVING_TASK_ID=<service_id> clearml-serving-inference:latest
-    ```
+4. If you already have the `clearml-serving` docker-compose running, it might take it a minute or two to sync with the new endpoint. To run docker-compose, see [docker-compose instructions](/README.md#nail_care-initial-setup), p. 8 (and use [docker-compose-gpu.yml](/docker/docker-compose-gpu.yml) file for vllm on gpu and [docker-compose.yml](/docker/docker-compose.yml) otherwise)
 
 5. Test new endpoint (do notice the first call will trigger the model pulling, so it might take longer, from here on, it's all in memory):
 
@@ -31,6 +26,8 @@
     + /v1/models
 
     see [test_openai_api.py](test_openai_api.py) for more information.
+
+6. Check metrics using grafana (You have to select Prometheus as data source, all of vLLM metrics have "vllm:" prefix). For more information, see [Model monitoring and performance metrics](/README.md#bar_chart-model-monitoring-and-performance-metrics-bell)
 
 NOTE!
 
