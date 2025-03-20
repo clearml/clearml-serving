@@ -192,7 +192,7 @@ async def base_serve_model(
     return_value = await process_with_exceptions(
         base_url=model_id,
         version=version,
-        request_body=request,
+        request=request,
         serve_type="process"
     )
     return return_value
@@ -218,7 +218,7 @@ async def openai_serve_model(
     return_value = await process_with_exceptions(
         base_url=request.model,
         version=None,
-        request_body=combined_request,
+        request=combined_request,
         serve_type=endpoint_type
     )
     return return_value
