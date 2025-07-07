@@ -1,6 +1,6 @@
 """
 `clearml-serving` - Model-Serving Orchestration and Repository Solution
-https://github.com/allegroai/clearml-serving
+https://github.com/clearml/clearml-serving
 """
 
 import os.path
@@ -38,7 +38,7 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     # The project's main homepage.
-    url='https://github.com/allegroai/clearml-serving.git',
+    url='https://github.com/clearml/clearml-serving.git',
     author='ClearML',
     author_email='support@clear.ml',
     license='Apache License 2.0',
