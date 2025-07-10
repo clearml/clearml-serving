@@ -41,8 +41,6 @@ then
       python3 -m pip install $CLEARML_EXTRA_PYTHON_PACKAGES
 fi
 
-
-
 if [ -z "$CLEARML_USE_GUNICORN" ]
 then
   if [ -z "$CLEARML_SERVING_NUM_PROCESS" ]

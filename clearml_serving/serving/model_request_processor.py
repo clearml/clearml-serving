@@ -668,6 +668,8 @@ class ModelRequestProcessor(object):
 
         # make sure we only have one stall request at any given moment
         with self._update_lock_guard:
+            prev_endpoints = dict(**self._endpoints)
+
             # download artifacts
             # todo: separate into two, download before lock, and overwrite inside lock
             if prefetch_artifacts:
@@ -707,8 +709,11 @@ class ModelRequestProcessor(object):
             if update_current_task and Task.current_task() and Task.current_task().id != self._task.id:
                 self.serialize(task=Task.current_task())
 
-        for endpoint in self._endpoints.values():
-            self._start_model_endpoint_telemetry(endpoint)
+            for endpoint in self._endpoints.values():
+                self._start_model_endpoint_telemetry(endpoint)
+            for endpoint_name, endpoint in prev_endpoints.items():
+                if endpoint_name not in self._endpoints:
+                    self._stop_model_endpoint_telemetry(endpoint)
 
         return True
 

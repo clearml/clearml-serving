@@ -75,7 +75,7 @@ services:
 
 
   clearml-serving-inference:
-    image: clearml-serving-inference-local 
+    image: allegroai/clearml-serving-inference:latest
     container_name: clearml-serving-inference
     restart: unless-stopped
     # optimize perforamnce
