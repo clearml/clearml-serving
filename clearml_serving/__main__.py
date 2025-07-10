@@ -198,7 +198,14 @@ def func_list_services(_):
         print("No running services found")
     else:
         for s in running_services:
-            print(s)
+            # Create ordered dictionary with consistent field order
+            ordered_service = {
+                'name': s.get('name', ''),
+                'tags': s.get('tags', []),
+                'id': s.get('id', ''),
+                'project': s.get('project', '')
+            }
+            print(ordered_service)
 
 
 def func_model_remove(args):
