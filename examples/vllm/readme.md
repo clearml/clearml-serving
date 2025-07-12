@@ -4,7 +4,7 @@
 
 1. Create serving Service: `clearml-serving create --name "serving example"` (write down the service ID)
 
-2. Add vLLM engine parameters in `VLLM_ENGINE_ARGS` variable as it was done in [this file](/docker/docker-compose-gpu.yml#L108). Make sure to add any required additional packages (for your custom model) to the [requirements.txt](/clearml_serving/serving/requirements.txt) or [docker-compose.yml](https://github.com/allegroai/clearml-serving/blob/826f503cf4a9b069b89eb053696d218d1ce26f47/docker/docker-compose.yml#L97) (or as environment variable to the `clearml-serving-inference` container), by defining for example: `CLEARML_EXTRA_PYTHON_PACKAGES="vllm==0.7.3 prometheus_client==0.21.1"`
+2. Add vLLM engine parameters in `VLLM_ENGINE_ARGS` variable as it was done in [this file](/docker/docker-compose-gpu.yml#L108). Make sure to add any required additional packages (for your custom model) to the [requirements.txt](/clearml_serving/serving/requirements.txt) or [docker-compose.yml](https://github.com/allegroai/clearml-serving/blob/826f503cf4a9b069b89eb053696d218d1ce26f47/docker/docker-compose.yml#L97) (or as environment variable to the `clearml-serving-inference` container), by defining for example: `CLEARML_EXTRA_PYTHON_PACKAGES="vllm==0.9.2 prometheus_client==0.21.1"`
 
 3. Create model endpoint: 
     ```
@@ -24,6 +24,13 @@
     + /v1/completions
     + /v1/chat/completions
     + /v1/models
+    + /v1/audio/transcriptions
+    + /v1/audio/translations
+    + /v1/embeddings
+    + /pooling
+    + /classify
+    + /score
+    + /rerank
 
     see [test_openai_api.py](test_openai_api.py) for more information.
 
