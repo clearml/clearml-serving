@@ -19,11 +19,12 @@ class Preprocess:
             "max_log_len": None
         }
         chat_settings = {
-            "enable_reasoning": False,
             "reasoning_parser": None,
             "enable_auto_tools": False,
+            "expand_tools_even_if_tool_choice_none": False,
             "tool_parser": None,
             "enable_prompt_tokens_details": False,
+            "enable_force_include_usage": False,
             "chat_template_content_format": "auto"
         }
         return {

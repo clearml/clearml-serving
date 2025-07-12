@@ -4,7 +4,7 @@ FROM python:3.11-bullseye
 ENV LC_ALL=C.UTF-8
 
 # install base package
-# RUN pip3 install --no-cache-dir clearml-serving
+RUN pip3 install --no-cache-dir clearml-serving
 
 # get latest execution code from the git repository
 # RUN cd $HOME && git clone https://github.com/allegroai/clearml-serving.git
