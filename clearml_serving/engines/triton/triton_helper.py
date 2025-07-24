@@ -254,7 +254,7 @@ class TritonHelper(object):
         for k, v in self.args.items():
             if not v or not str(k).startswith('t_'):
                 continue
-            cmd.append('--{}={}'.format(k, v))
+            cmd.append('--{}={}'.format(k.replace("t_", "", 1).replace("_","-"), v))
 
         print('Starting server: {}'.format(cmd))
         try:
