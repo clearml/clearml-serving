@@ -125,6 +125,7 @@ async def process_with_exceptions(
     request: Union[bytes, Dict[Any, Any]],
     serve_type: str
 ):
+    processor.on_request_endpoint_telemetry(base_url=base_url, version=version)
     try:
         return_value = await processor.process_request(
             base_url=base_url,
