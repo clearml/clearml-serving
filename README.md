@@ -1,17 +1,17 @@
 
 <div align="center">
 
-<a href="https://app.clear.ml"><img src="https://github.com/allegroai/clearml/blob/master/docs/clearml-logo.svg?raw=true" width="250px"></a>
+<a href="https://app.clear.ml"><img src="https://github.com/clearml/clearml/blob/master/docs/clearml-logo.svg?raw=true" width="250px"></a>
 
 **ClearML Serving - Model deployment made easy**
 
 ## **`clearml-serving v1.3.1` </br> :sparkles: Model Serving (ML/DL) Made Easy :tada:** <br> :fire: NEW version 1.3 :rocket: 20% faster ! 
 
 
-[![GitHub license](https://img.shields.io/github/license/allegroai/clearml-serving.svg)](https://img.shields.io/github/license/allegroai/clearml-serving.svg)
+[![GitHub license](https://img.shields.io/github/license/clearml/clearml-serving.svg)](https://img.shields.io/github/license/clearml/clearml-serving.svg)
 [![PyPI pyversions](https://img.shields.io/pypi/pyversions/clearml-serving.svg)](https://img.shields.io/pypi/pyversions/clearml-serving.svg)
 [![PyPI version shields.io](https://img.shields.io/pypi/v/clearml-serving.svg)](https://img.shields.io/pypi/v/clearml-serving.svg)
-[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/allegroai)](https://artifacthub.io/packages/helm/allegroai/clearml-serving)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/clearml)](https://artifacthub.io/packages/helm/clearml/clearml-serving)
 [![Slack Channel](https://img.shields.io/badge/slack-%23clearml--community-blueviolet?logo=slack)](https://joinslack.clear.ml)
 
 `🌟 ClearML is open-source - Leave a star to support the project! 🌟`
@@ -25,7 +25,7 @@ It enables model deployment including serving and preprocessing code to a Kubern
 ### :fire: NEW :confetti_ball: Take it for a spin with a simple `docker-compose` [command](#nail_care-initial-setup) :magic_wand: :sparkles: 
 
 
-<a><img src="https://github.com/allegroai/clearml-serving/blob/main/docs/design_diagram.png?raw=true" width="100%"></a>
+<a><img src="https://github.com/clearml/clearml-serving/blob/main/docs/design_diagram.png?raw=true" width="100%"></a>
 
 Features:
 * Easy to deploy & configure
@@ -73,7 +73,7 @@ Features:
 
 ### :nail_care: Initial Setup
 
-1. Setup your [**ClearML Server**](https://github.com/allegroai/clearml-server) or use the [Free tier Hosting](https://app.clear.ml)
+1. Setup your [**ClearML Server**](https://github.com/clearml/clearml-server) or use the [Free tier Hosting](https://app.clear.ml)
 2. Setup local access (if you haven't already), see instructions [here](https://clear.ml/docs/latest/docs/getting_started/ds/ds_first_steps#install-clearml)
 3. Install clearml-serving CLI: 
 ```bash
@@ -85,7 +85,7 @@ pip3 install clearml-serving
 5. Write down the Serving Service UID
 6. Clone clearml-serving repository
 ```bash
-git clone https://github.com/allegroai/clearml-serving.git
+git clone https://github.com/clearml/clearml-serving.git
 ```
 7. Edit the environment variables file (`docker/example.env`) with your clearml-server credentials and Serving Service UID. For example, you should have something like
 ```bash
@@ -170,7 +170,7 @@ AZURE_STORAGE_KEY
 **Notice** On the first few requests the inference container needs to download the model file and preprocessing python code, this means the request might take a little longer, once everything is cached, it will return almost immediately.
 
 **Notes:**
-> Review the model repository in the ClearML web UI, under the "serving examples" Project on your ClearML account/server ([free hosted](https://app.clear.ml) or [self-deployed](https://github.com/allegroai/clearml-server)).
+> Review the model repository in the ClearML web UI, under the "serving examples" Project on your ClearML account/server ([free hosted](https://app.clear.ml) or [self-deployed](https://github.com/clearml/clearml-server)).
 
 > Inference services status, console outputs and machine metrics are available in the ClearML UI in the Serving Service project (default: "DevOps" project)
 
@@ -330,6 +330,6 @@ Grafana model performance example:
 
 ## Contributing
 
-**PRs are always welcomed** :heart: See more details in the ClearML [Guidelines for Contributing](https://github.com/allegroai/clearml/blob/master/docs/contributing.md).
+**PRs are always welcomed** :heart: See more details in the ClearML [Guidelines for Contributing](https://github.com/clearml/clearml/blob/master/docs/contributing.md).
 
 
