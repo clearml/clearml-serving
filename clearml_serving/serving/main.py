@@ -115,7 +115,10 @@ async def cuda_exception_handler(request, exc):
 
 def check_cuda_oom_exception(ex: Exception):
     if "CUDA out of memory. " in str(ex) or "NVML_SUCCESS == r INTERNAL ASSERT FAILED" in str(ex):
-        raise CUDAException(exception=ex)
+        # TODO: Test which one is better - CUDAException() or os._exit(1)
+        # raise CUDAException(exception=ex)
+        # can't always recover from this - prefer to exit the program such that it can be restarted
+        os._exit(1)
     else:
         raise HTTPException(status_code=422, detail="Error [{}] processing request: {}".format(type(ex), ex))
 
@@ -173,6 +176,7 @@ async def process_with_exceptions(
             )
         )
         check_cuda_oom_exception(ex)
+    processor.on_response_endpoint_telemetry(base_url=base_url, version=version)
     return return_value
 
 
