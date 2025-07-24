@@ -73,6 +73,8 @@ CLEARML_EXTRA_PYTHON_PACKAGES=transformers
 # Change this depending on your machine and performance needs
 CLEARML_USE_GUNICORN=1
 CLEARML_SERVING_NUM_PROCESS=8
+# Restarts if the serving process crashes
+CLEARML_SERVING_RESTART_ON_FAILURE=1
 ```
 
 Huggingface models require Triton engine support, please use `docker-compose-triton.yml` / `docker-compose-triton-gpu.yml` or if running on Kubernetes, the matching helm chart to set things up. Check the repository main readme documentation if you need help.

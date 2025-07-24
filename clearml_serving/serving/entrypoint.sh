@@ -9,6 +9,8 @@ echo CLEARML_EXTRA_PYTHON_PACKAGES="$CLEARML_EXTRA_PYTHON_PACKAGES"
 echo CLEARML_SERVING_NUM_PROCESS="$CLEARML_SERVING_NUM_PROCESS"
 echo CLEARML_SERVING_POLL_FREQ="$CLEARML_SERVING_POLL_FREQ"
 echo CLEARML_DEFAULT_KAFKA_SERVE_URL="$CLEARML_DEFAULT_KAFKA_SERVE_URL"
+echo CLEARML_SERVING_RESTART_ON_FAILURE="$CLEARML_SERVING_RESTART_ON_FAILURE"
+echo CLEARML_ENABLE_ENDPOINT_TELEMETRY="$CLEARML_ENABLE_ENDPOINT_TELEMETRY"
 
 SERVING_PORT="${CLEARML_SERVING_PORT:-8080}"
 GUNICORN_NUM_PROCESS="${CLEARML_SERVING_NUM_PROCESS:-4}"
@@ -42,29 +44,36 @@ then
       python3 -m pip install $CLEARML_EXTRA_PYTHON_PACKAGES
 fi
 
-if [ -z "$CLEARML_USE_GUNICORN" ]
-then
-  if [ -z "$CLEARML_SERVING_NUM_PROCESS" ]
+while : ; do
+  if [ -z "$CLEARML_USE_GUNICORN" ]
   then
-    echo "Starting Uvicorn server - single worker"
-    PYTHONPATH=$(pwd) python3 -m uvicorn \
-        clearml_serving.serving.main:app --log-level $UVICORN_LOG_LEVEL --host 0.0.0.0 --port $SERVING_PORT --loop $UVICORN_SERVE_LOOP \
-        $UVICORN_EXTRA_ARGS
+    if [ -z "$CLEARML_SERVING_NUM_PROCESS" ]
+    then
+      echo "Starting Uvicorn server - single worker"
+      PYTHONPATH=$(pwd) python3 -m uvicorn \
+          clearml_serving.serving.main:app --log-level $UVICORN_LOG_LEVEL --host 0.0.0.0 --port $SERVING_PORT --loop $UVICORN_SERVE_LOOP \
+          $UVICORN_EXTRA_ARGS
+    else
+      echo "Starting Uvicorn server - multi worker"
+      PYTHONPATH=$(pwd) python3 clearml_serving/serving/uvicorn_mp_entrypoint.py \
+          clearml_serving.serving.main:app --log-level $UVICORN_LOG_LEVEL --host 0.0.0.0 --port $SERVING_PORT --loop $UVICORN_SERVE_LOOP \
+          --workers $CLEARML_SERVING_NUM_PROCESS $UVICORN_EXTRA_ARGS
+    fi
   else
-    echo "Starting Uvicorn server - multi worker"
-    PYTHONPATH=$(pwd) python3 clearml_serving/serving/uvicorn_mp_entrypoint.py \
-        clearml_serving.serving.main:app --log-level $UVICORN_LOG_LEVEL --host 0.0.0.0 --port $SERVING_PORT --loop $UVICORN_SERVE_LOOP \
-        --workers $CLEARML_SERVING_NUM_PROCESS $UVICORN_EXTRA_ARGS
+    echo "Starting Gunicorn server"
+    # start service
+    PYTHONPATH=$(pwd) python3 -m gunicorn \
+        --preload clearml_serving.serving.main:app \
+        --workers $GUNICORN_NUM_PROCESS \
+        --worker-class uvicorn.workers.UvicornWorker \
+        --max-requests $GUNICORN_MAX_REQUESTS \
+        --timeout $GUNICORN_SERVING_TIMEOUT \
+        --bind 0.0.0.0:$SERVING_PORT \
+        $GUNICORN_EXTRA_ARGS
   fi
-else
-  echo "Starting Gunicorn server"
-  # start service
-  PYTHONPATH=$(pwd) python3 -m gunicorn \
-      --preload clearml_serving.serving.main:app \
-      --workers $GUNICORN_NUM_PROCESS \
-      --worker-class uvicorn.workers.UvicornWorker \
-      --max-requests $GUNICORN_MAX_REQUESTS \
-      --timeout $GUNICORN_SERVING_TIMEOUT \
-      --bind 0.0.0.0:$SERVING_PORT \
-      $GUNICORN_EXTRA_ARGS
-fi
+
+  if [ -z "$CLEARML_SERVING_RESTART_ON_FAILURE" ]
+  then
+    break
+  fi
+done

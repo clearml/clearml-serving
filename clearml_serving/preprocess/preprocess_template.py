@@ -41,6 +41,17 @@ class Preprocess(object):
         """
         pass
 
+    def unload(self) -> None:
+        """
+        OPTIONAL: provide unloading method for the model
+        For example:
+        ```py
+        import torch
+        torch.cuda.empty_cache()
+        ```
+        """
+        pass
+
     def preprocess(
             self,
             body: Union[bytes, dict],

@@ -1,18 +1,19 @@
 import json
 import os
 import gc
+import uuid
 from collections import deque
 from pathlib import Path
 from random import random
 from time import sleep, time
-from typing import Optional, Union, Dict, List
+from typing import Optional, Union, Dict, List, TYPE_CHECKING
 import itertools
 import threading
 from multiprocessing import Lock
 import asyncio
 from numpy.random import choice
 
-from clearml import Task, Model
+from clearml import Task, Model, InputModel
 from clearml.utilities.dicts import merge_dicts, cast_str_to_bool
 from clearml.storage.util import hash_dict
 from .preprocess_service import BasePreprocessRequest
@@ -116,7 +117,7 @@ class ModelRequestProcessor(object):
             name: Optional[str] = None,
             project: Optional[str] = None,
             tags: Optional[List[str]] = None,
-            force_create: bool = False,
+            force_create: bool = False
     ) -> None:
         """
         ModelRequestProcessor constructor
@@ -158,6 +159,96 @@ class ModelRequestProcessor(object):
         self._triton_grpc_compression = None
         self._serving_base_url = None
         self._metric_log_freq = None
+        self._endpoint_telemetry = {}
+        self._enable_endpoint_telemetry = os.environ.get("CLEARML_ENABLE_ENDPOINT_TELEMETRY", "1") != "0"
+
+    def on_request_endpoint_telemetry(self, base_url=None, version=None):
+        try:
+            if not self._enable_endpoint_telemetry:
+                return
+
+            url = self._normalize_endpoint_url(base_url, version)
+            endpoint_telemetry = self._endpoint_telemetry.get(url)
+            if endpoint_telemetry:
+                endpoint_telemetry.on_request()
+        except Exception:
+            pass
+
+    def on_response_endpoint_telemetry(self, base_url=None, version=None):
+        try:
+            if not self._enable_endpoint_telemetry:
+                return
+
+            url = self._normalize_endpoint_url(base_url, version)
+            endpoint_telemetry = self._endpoint_telemetry.get(url)
+            if endpoint_telemetry:
+                endpoint_telemetry.on_response()
+        except Exception:
+            pass
+
+    def _start_model_endpoint_telemetry(self, endpoint):
+        try:
+            if not self._enable_endpoint_telemetry:
+                return
+
+            from clearml.router.endpoint_telemetry import EndpointTelemetry
+            from clearml.utilities.networking import get_private_ip
+
+            url = self._normalize_endpoint_url(endpoint.serving_url, endpoint.version)
+            try:
+                private_ip = get_private_ip()
+            except Exception:
+                private_ip = "localhost"
+            http_url = "http://{}:{}/serve/{}".format(private_ip, os.environ.get("SERVING_PORT", "8080"), url)
+            model = InputModel(model_id=endpoint.model_id)
+            model_url = "{}/projects/{}/models/{}/output/general".format(
+                self._task._get_app_server().rstrip("/"), model.project, model.id
+            )
+            if url not in self._endpoint_telemetry:
+                container_id = str(uuid.uuid4()).replace("-", "")
+                self._endpoint_telemetry[url] = EndpointTelemetry(
+                    endpoint_name=model.name,
+                    model_name=model.name,
+                    model=model.id,
+                    model_url=model_url,
+                    model_source="ClearML",
+                    model_version=endpoint.version,
+                    tags=model.tags,
+                    system_tags=model.system_tags,
+                    input_size=endpoint.input_size,
+                    input_type=endpoint.input_type,
+                    endpoint_url=http_url,
+                    preprocess_artifact=endpoint.preprocess_artifact,
+                    container_id=container_id,
+                    force_register=True
+                )
+            else:
+                self._endpoint_telemetry[url].update(
+                    endpoint_name=model.name,
+                    model_name=model.name,
+                    model=model.id,
+                    model_url=model_url,
+                    model_version=endpoint.version,
+                    tags=model.tags,
+                    system_tags=model.system_tags,
+                    input_size=endpoint.input_size,
+                    input_type=endpoint.input_type,
+                    endpoint_url=http_url,
+                    preprocess_artifact=endpoint.preprocess_artifact
+                )
+        except Exception as e:
+            print("Error: Could not start endpoint telemetry '{}'".format(e))
+
+    def _stop_model_endpoint_telemetry(self, endpoint):
+        try:
+            if not self._enable_endpoint_telemetry:
+                return
+            url = self._normalize_endpoint_url(endpoint.serving_url, endpoint.version)
+            endpoint_telemetry = self._endpoint_telemetry.pop(url, None)
+            if endpoint_telemetry:
+                endpoint_telemetry.stop()
+        except Exception as e:
+            print("Error: Could not stop endpoint telemetry '{}'".format(e))
 
     async def process_request(self, base_url: str, version: str, request_body: dict, serve_type: str) -> dict:
         """
@@ -178,6 +269,8 @@ class ModelRequestProcessor(object):
                 serve_type=serve_type
             )
 
+        processor = None
+        url = None
         try:
             # normalize url and version
             url = self._normalize_endpoint_url(base_url, version)
@@ -204,6 +297,8 @@ class ModelRequestProcessor(object):
                 serve_type=serve_type
             )
         finally:
+            if url and processor is not None and processor is not self._engine_processor_lookup.get(url):
+                gc.collect()
             self._request_processing_state.dec()
 
         return return_value
@@ -587,6 +682,8 @@ class ModelRequestProcessor(object):
 
         # make sure we only have one stall request at any given moment
         with self._update_lock_guard:
+            prev_endpoints = dict(**self._endpoints)
+
             # download artifacts
             # todo: separate into two, download before lock, and overwrite inside lock
             if prefetch_artifacts:
@@ -625,6 +722,12 @@ class ModelRequestProcessor(object):
             # update the state on the inference task
             if update_current_task and Task.current_task() and Task.current_task().id != self._task.id:
                 self.serialize(task=Task.current_task())
+
+            for endpoint in self._endpoints.values():
+                self._start_model_endpoint_telemetry(endpoint)
+            for endpoint_name, endpoint in prev_endpoints.items():
+                if endpoint_name not in self._endpoints:
+                    self._stop_model_endpoint_telemetry(endpoint)
 
         return True
 
@@ -921,23 +1024,23 @@ class ModelRequestProcessor(object):
                 if cleanup or model_monitor_update:
                     self._update_serving_plot()
                 if cleanup:
+                    gc.collect()
                     self._engine_processor_lookup = dict()
             except Exception as ex:
                 print("Exception occurred in monitoring thread: {}".format(ex))
             sleep(poll_frequency_sec)
             try:
                 # we assume that by now all old deleted endpoints requests already returned
+                call_gc_collect = False
                 if model_monitor_update and not cleanup:
                     for k in list(self._engine_processor_lookup.keys()):
                         if k not in self._endpoints:
+                            self._stop_model_endpoint_telemetry(self._engine_processor_lookup[k].model_endpoint)
                             # atomic
-                            self._engine_processor_lookup[k]._model = None
-                            self._engine_processor_lookup[k]._preprocess = None
-                            del self._engine_processor_lookup[k]
                             self._engine_processor_lookup.pop(k, None)
-                            gc.collect()
-                            if torch:
-                                torch.cuda.empty_cache()
+                            call_gc_collect = True
+                if call_gc_collect:
+                    gc.collect()
                 cleanup = False
                 model_monitor_update = False
             except Exception as ex:

@@ -97,7 +97,18 @@ class BasePreprocessRequest(object):
             sys.modules[spec.name] = _preprocess
             spec.loader.exec_module(_preprocess)
 
-        Preprocess = _preprocess.Preprocess  # noqa
+        class PreprocessDelWrapper(_preprocess.Preprocess):
+            def __del__(self):
+                super_ = super(PreprocessDelWrapper, self)
+                if callable(getattr(super_, "unload", None)):
+                    try:
+                        super_.unload()
+                    except Exception as ex:
+                        print("Failed unloading model: {}".format(ex))
+                if callable(getattr(super_, "__del__", None)):
+                    super_.__del__()
+
+        Preprocess = PreprocessDelWrapper # noqa
         # override `send_request` method
         Preprocess.send_request = BasePreprocessRequest._preprocess_send_request
         # create preprocess class
