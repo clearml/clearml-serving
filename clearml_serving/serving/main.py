@@ -115,8 +115,8 @@ async def cuda_exception_handler(request, exc):
 
 def check_cuda_oom_exception(ex: Exception):
     if "CUDA out of memory. " in str(ex) or "NVML_SUCCESS == r INTERNAL ASSERT FAILED" in str(ex):
-        # TODO: Test which one is better - CUDAException() or os._exit(1)
-        # raise CUDAException(exception=ex)
+        if os.environ.get("CLEARML_SERVING_DEV_CUDAEXCEPTION", "0") != "0":
+            raise CUDAException(exception=ex)
         # can't always recover from this - prefer to exit the program such that it can be restarted
         os._exit(1)
     else:
@@ -181,7 +181,7 @@ async def process_with_exceptions(
 
 
 router = APIRouter(
-    prefix=f"/{os.environ.get('CLEARML_DEFAULT_SERVE_SUFFIX', 'serve')}",
+    prefix=f"/{os.environ.get("CLEARML_DEFAULT_SERVE_SUFFIX", "serve")}",
     tags=["models"],
     responses={404: {"description": "Model Serving Endpoint Not found"}},
     route_class=GzipRoute,  # mark-out to remove support for GZip content encoding
