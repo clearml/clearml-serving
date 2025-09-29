@@ -334,6 +334,6 @@ Grafana model performance example:
 
 ## Contributing
 
-**PRs are always welcomed** :heart: See more details in the ClearML [Guidelines for Contributing](https://github.com/clearml/clearml/blob/master/docs/contributing.md).
+**PRs are always welcomed** :heart: See more details in the ClearML [Guidelines for Contributing](https://github.com/clearml/clearml/blob/master/CONTRIBUTING.md).
 
 
