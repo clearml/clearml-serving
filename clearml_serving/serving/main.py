@@ -366,21 +366,20 @@ async def validate_json_request(raw_request: Request):
             detail="Unsupported Media Type: Only 'application/json' is allowed"
         )
 
-if VLLM_AVAILABLE:
-    @router.post("/openai/{endpoint_type:path}", dependencies=[Depends(validate_json_request)])
-    @router.get("/openai/{endpoint_type:path}", dependencies=[Depends(validate_json_request)])
-    async def openai_serve_model(
-        endpoint_type: str,
-        request: Union[CompletionRequest, ChatCompletionRequest],
-        raw_request: Request
-    ):
-        combined_request = {"request": request, "raw_request": raw_request}
-        return_value = await process_with_exceptions(
-            base_url=request.model,
-            version=None,
-            request=combined_request,
-            serve_type=endpoint_type
-        )
-        return return_value
+@router.post("/openai/{endpoint_type:path}", dependencies=[Depends(validate_json_request)])
+@router.get("/openai/{endpoint_type:path}", dependencies=[Depends(validate_json_request)])
+async def openai_serve_model(
+    endpoint_type: str,
+    request: Union[CompletionRequest, ChatCompletionRequest],
+    raw_request: Request
+):
+    combined_request = {"request": request, "raw_request": raw_request}
+    return_value = await process_with_exceptions(
+        base_url=request.model,
+        version=None,
+        request=combined_request,
+        serve_type=endpoint_type
+    )
+    return return_value
 
 app.include_router(router)
