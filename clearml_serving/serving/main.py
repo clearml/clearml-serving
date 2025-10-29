@@ -333,7 +333,7 @@ async def metrics_endpoint():
     return JSONResponse(status_code=200, content=metrics)
 
 router = APIRouter(
-    prefix=f"/{os.environ.get("CLEARML_DEFAULT_SERVE_SUFFIX", "serve")}",
+    prefix=f"/{os.environ.get('CLEARML_DEFAULT_SERVE_SUFFIX', 'serve')}",
     tags=["models"],
     responses={404: {"description": "Model Serving Endpoint Not found"}},
     route_class=GzipRoute,  # mark-out to remove support for GZip content encoding
