@@ -3,10 +3,12 @@ import shlex
 import traceback
 import gzip
 import asyncio
+import time
+import uuid
 
 from fastapi import FastAPI, Request, Response, APIRouter, HTTPException, Depends
 from fastapi.routing import APIRoute
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 from grpc.aio import AioRpcError
 
 from http import HTTPStatus
@@ -57,6 +59,11 @@ processor = None  # type: Optional[ModelRequestProcessor]
 
 # create clearml Task and load models
 serving_service_task_id, session_logger, instance_id = setup_task()
+
+# Health check tracking variables
+startup_time = time.time()
+service_instance_id = str(uuid.uuid4())[:8]
+
 # polling frequency
 model_sync_frequency_secs = 5
 try:
@@ -179,6 +186,151 @@ async def process_with_exceptions(
     processor.on_response_endpoint_telemetry(base_url=base_url, version=version)
     return return_value
 
+
+# ============================================================================
+# HEALTH CHECK ENDPOINTS
+# ============================================================================
+
+@app.get("/health")
+async def health_check():
+    """
+    Basic health check endpoint.
+    Returns 200 OK when service is running.
+    """
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "healthy",
+            "service": "clearml-serving",
+            "version": __version__,
+            "timestamp": time.time(),
+            "instance_id": service_instance_id,
+        },
+    )
+
+
+@app.get("/readiness")
+async def readiness_check():
+    """
+    Readiness check endpoint.
+    Returns 200 if ready to serve requests, 503 if not ready.
+    Checks if ModelRequestProcessor is initialized and models are loaded.
+    """
+    global processor
+
+    if not processor:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "not_ready",
+                "reason": "Processor not initialized",
+                "timestamp": time.time(),
+            },
+        )
+
+    try:
+        # Check if models are loaded
+        models_loaded = processor.get_loaded_endpoints()
+        if not models_loaded:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "not_ready",
+                    "reason": "No models loaded",
+                    "timestamp": time.time(),
+                },
+            )
+
+        # Check GPU availability if applicable
+        gpu_available = False
+        try:
+            import torch
+
+            gpu_available = torch.cuda.is_available()
+        except (ImportError, ModuleNotFoundError, AttributeError):
+            # torch not installed or CUDA not available
+            pass
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "ready",
+                "models_loaded": len(models_loaded),
+                "gpu_available": gpu_available,
+                "timestamp": time.time(),
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "not_ready",
+                "reason": f"Error checking readiness: {str(e)}",
+                "timestamp": time.time(),
+            },
+        )
+
+
+@app.get("/liveness")
+async def liveness_check():
+    """
+    Liveness check endpoint.
+    Lightweight check for container orchestration.
+    Returns 200 OK if process is responsive.
+    """
+    return JSONResponse(
+        status_code=200, content={"status": "alive", "timestamp": time.time()}
+    )
+
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    """
+    Detailed metrics endpoint.
+    Returns service metrics including uptime, request count, GPU usage, etc.
+    """
+    global processor
+
+    uptime_seconds = time.time() - startup_time
+
+    metrics = {
+        "uptime_seconds": round(uptime_seconds, 2),
+        "total_requests": 0,
+        "last_prediction_timestamp": None,
+        "models": [],
+    }
+
+    if processor:
+        try:
+            metrics["total_requests"] = processor.get_request_count()
+            metrics["last_prediction_timestamp"] = processor.get_last_prediction_time()
+
+            # Get loaded models info
+            loaded_endpoints = processor.get_loaded_endpoints()
+            for endpoint_name in loaded_endpoints:
+                metrics["models"].append({"endpoint": endpoint_name, "loaded": True})
+        except AttributeError:
+            # If methods don't exist yet, continue with basic metrics
+            pass
+
+    # Try to get GPU metrics
+    try:
+        import pynvml
+
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        metrics["gpu_memory_used_mb"] = round(info.used / 1024 / 1024, 2)
+        metrics["gpu_memory_total_mb"] = round(info.total / 1024 / 1024, 2)
+        pynvml.nvmlShutdown()
+    except (ImportError, ModuleNotFoundError, AttributeError, OSError):
+        # GPU metrics not available (pynvml not installed, no GPU, or driver issues)
+        metrics["gpu_memory_used_mb"] = None
+        metrics["gpu_memory_total_mb"] = None
+
+    return JSONResponse(status_code=200, content=metrics)
 
 router = APIRouter(
     prefix=f"/{os.environ.get("CLEARML_DEFAULT_SERVE_SUFFIX", "serve")}",
