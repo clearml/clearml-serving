@@ -220,20 +220,12 @@ async def readiness_check():
             },
         )
 
-    gpu_available = False
-    try:
-        import torch
-        gpu_available = torch.cuda.is_available()
-    except (ImportError, AttributeError):
-        pass
-
     models_loaded = processor.get_loaded_endpoints()
     return JSONResponse(
         status_code=200,
         content={
             "status": "ready",
             "models_loaded": len(models_loaded),
-            "gpu_available": gpu_available,
             "timestamp": time.time(),
         },
     )
