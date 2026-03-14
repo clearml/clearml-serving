@@ -3,10 +3,11 @@ import shlex
 import traceback
 import gzip
 import asyncio
+import time
 
 from fastapi import FastAPI, Request, Response, APIRouter, HTTPException, Depends
 from fastapi.routing import APIRoute
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 from grpc.aio import AioRpcError
 
 from http import HTTPStatus
@@ -57,6 +58,10 @@ processor = None  # type: Optional[ModelRequestProcessor]
 
 # create clearml Task and load models
 serving_service_task_id, session_logger, instance_id = setup_task()
+
+# Health check tracking
+startup_time = time.time()
+
 # polling frequency
 model_sync_frequency_secs = 5
 try:
@@ -179,6 +184,109 @@ async def process_with_exceptions(
     processor.on_response_endpoint_telemetry(base_url=base_url, version=version)
     return return_value
 
+
+@app.get("/health")
+async def health_check():
+    """
+    Basic health check endpoint.
+    Returns 200 OK when service is running.
+    """
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "healthy",
+            "service": "clearml-serving",
+            "version": __version__,
+            "timestamp": time.time(),
+            "instance_id": instance_id,
+        },
+    )
+
+
+@app.get("/readiness")
+async def readiness_check():
+    """
+    Readiness check endpoint.
+    Returns 200 if the processor is initialized and ready to serve requests, 503 if not.
+    A service with no endpoints configured is still considered ready.
+    """
+    if not processor:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "not_ready",
+                "reason": "Processor not initialized",
+                "timestamp": time.time(),
+            },
+        )
+
+    models_loaded = processor.get_loaded_endpoints()
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "ready",
+            "models_loaded": len(models_loaded),
+            "timestamp": time.time(),
+        },
+    )
+
+
+@app.get("/liveness")
+async def liveness_check():
+    """
+    Liveness check endpoint.
+    Lightweight check for container orchestration.
+    Returns 200 OK if process is responsive.
+    """
+    return JSONResponse(
+        status_code=200, content={"status": "alive", "timestamp": time.time()}
+    )
+
+
+@app.get("/health/metrics")
+async def metrics_endpoint():
+    """
+    Detailed service metrics endpoint (JSON).
+    Returns uptime, request count, loaded models, and GPU memory if available.
+    Note: this is not a Prometheus-format endpoint; use the statistics service for that.
+    """
+    uptime_seconds = time.time() - startup_time
+
+    metrics = {
+        "uptime_seconds": round(uptime_seconds, 2),
+        "total_requests": 0,
+        "last_prediction_timestamp": None,
+        "models": [],
+    }
+
+    if processor:
+        metrics["total_requests"] = processor.get_request_count()
+        metrics["last_prediction_timestamp"] = processor.get_last_prediction_time()
+        for endpoint_name in processor.get_loaded_endpoints():
+            metrics["models"].append({"endpoint": endpoint_name, "loaded": True})
+
+    try:
+        import pynvml
+    except ImportError:
+        metrics["gpu_memory_used_mb"] = None
+        metrics["gpu_memory_total_mb"] = None
+    else:
+        nvml_initialized = False
+        try:
+            pynvml.nvmlInit()
+            nvml_initialized = True
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            metrics["gpu_memory_used_mb"] = round(info.used / 1024 / 1024, 2)
+            metrics["gpu_memory_total_mb"] = round(info.total / 1024 / 1024, 2)
+        except Exception:
+            metrics["gpu_memory_used_mb"] = None
+            metrics["gpu_memory_total_mb"] = None
+        finally:
+            if nvml_initialized:
+                pynvml.nvmlShutdown()
+
+    return JSONResponse(status_code=200, content=metrics)
 
 router = APIRouter(
     prefix=f"/{os.environ.get("CLEARML_DEFAULT_SERVE_SUFFIX", "serve")}",
