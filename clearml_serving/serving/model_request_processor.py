@@ -162,6 +162,7 @@ class ModelRequestProcessor(object):
         self._endpoint_telemetry = {}
         self._enable_endpoint_telemetry = os.environ.get("CLEARML_ENABLE_ENDPOINT_TELEMETRY", "1") != "0"
         # Health check tracking variables
+        self._request_lock = threading.Lock()
         self._request_count = 0
         self._last_prediction_time = None
 
@@ -259,8 +260,9 @@ class ModelRequestProcessor(object):
         Raise Value error if url does not match existing endpoints
         """
         # Track request for health metrics
-        self._request_count += 1
-        self._last_prediction_time = time()
+        with self._request_lock:
+            self._request_count += 1
+            self._last_prediction_time = time()
         
         self._request_processing_state.inc()
         # check if we need to stall
@@ -1579,18 +1581,16 @@ class ModelRequestProcessor(object):
         """
         Return list of loaded endpoint names for health checks.
         """
-        if not hasattr(self, "_endpoints") or not self._endpoints:
-            return []
         return list(self._endpoints.keys())
 
     def get_request_count(self) -> int:
         """
         Return total requests processed for health metrics.
         """
-        return getattr(self, "_request_count", 0)
+        return self._request_count
 
     def get_last_prediction_time(self) -> Optional[float]:
         """
         Return timestamp of last prediction for health metrics.
         """
-        return getattr(self, "_last_prediction_time", None)
+        return self._last_prediction_time

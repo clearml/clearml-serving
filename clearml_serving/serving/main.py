@@ -4,7 +4,6 @@ import traceback
 import gzip
 import asyncio
 import time
-import uuid
 
 from fastapi import FastAPI, Request, Response, APIRouter, HTTPException, Depends
 from fastapi.routing import APIRoute
@@ -60,9 +59,8 @@ processor = None  # type: Optional[ModelRequestProcessor]
 # create clearml Task and load models
 serving_service_task_id, session_logger, instance_id = setup_task()
 
-# Health check tracking variables
+# Health check tracking
 startup_time = time.time()
-service_instance_id = str(uuid.uuid4())[:8]
 
 # polling frequency
 model_sync_frequency_secs = 5
@@ -187,10 +185,6 @@ async def process_with_exceptions(
     return return_value
 
 
-# ============================================================================
-# HEALTH CHECK ENDPOINTS
-# ============================================================================
-
 @app.get("/health")
 async def health_check():
     """
@@ -204,7 +198,7 @@ async def health_check():
             "service": "clearml-serving",
             "version": __version__,
             "timestamp": time.time(),
-            "instance_id": service_instance_id,
+            "instance_id": instance_id,
         },
     )
 
@@ -213,11 +207,9 @@ async def health_check():
 async def readiness_check():
     """
     Readiness check endpoint.
-    Returns 200 if ready to serve requests, 503 if not ready.
-    Checks if ModelRequestProcessor is initialized and models are loaded.
+    Returns 200 if the processor is initialized and ready to serve requests, 503 if not.
+    A service with no endpoints configured is still considered ready.
     """
-    global processor
-
     if not processor:
         raise HTTPException(
             status_code=503,
@@ -228,49 +220,23 @@ async def readiness_check():
             },
         )
 
+    gpu_available = False
     try:
-        # Check if models are loaded
-        models_loaded = processor.get_loaded_endpoints()
-        if not models_loaded:
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "status": "not_ready",
-                    "reason": "No models loaded",
-                    "timestamp": time.time(),
-                },
-            )
+        import torch
+        gpu_available = torch.cuda.is_available()
+    except (ImportError, AttributeError):
+        pass
 
-        # Check GPU availability if applicable
-        gpu_available = False
-        try:
-            import torch
-
-            gpu_available = torch.cuda.is_available()
-        except (ImportError, ModuleNotFoundError, AttributeError):
-            # torch not installed or CUDA not available
-            pass
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "ready",
-                "models_loaded": len(models_loaded),
-                "gpu_available": gpu_available,
-                "timestamp": time.time(),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "status": "not_ready",
-                "reason": f"Error checking readiness: {str(e)}",
-                "timestamp": time.time(),
-            },
-        )
+    models_loaded = processor.get_loaded_endpoints()
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "ready",
+            "models_loaded": len(models_loaded),
+            "gpu_available": gpu_available,
+            "timestamp": time.time(),
+        },
+    )
 
 
 @app.get("/liveness")
@@ -285,14 +251,13 @@ async def liveness_check():
     )
 
 
-@app.get("/metrics")
+@app.get("/health/metrics")
 async def metrics_endpoint():
     """
-    Detailed metrics endpoint.
-    Returns service metrics including uptime, request count, GPU usage, etc.
+    Detailed service metrics endpoint (JSON).
+    Returns uptime, request count, loaded models, and GPU memory if available.
+    Note: this is not a Prometheus-format endpoint; use the statistics service for that.
     """
-    global processor
-
     uptime_seconds = time.time() - startup_time
 
     metrics = {
@@ -303,32 +268,31 @@ async def metrics_endpoint():
     }
 
     if processor:
-        try:
-            metrics["total_requests"] = processor.get_request_count()
-            metrics["last_prediction_timestamp"] = processor.get_last_prediction_time()
+        metrics["total_requests"] = processor.get_request_count()
+        metrics["last_prediction_timestamp"] = processor.get_last_prediction_time()
+        for endpoint_name in processor.get_loaded_endpoints():
+            metrics["models"].append({"endpoint": endpoint_name, "loaded": True})
 
-            # Get loaded models info
-            loaded_endpoints = processor.get_loaded_endpoints()
-            for endpoint_name in loaded_endpoints:
-                metrics["models"].append({"endpoint": endpoint_name, "loaded": True})
-        except AttributeError:
-            # If methods don't exist yet, continue with basic metrics
-            pass
-
-    # Try to get GPU metrics
     try:
         import pynvml
-
-        pynvml.nvmlInit()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-        metrics["gpu_memory_used_mb"] = round(info.used / 1024 / 1024, 2)
-        metrics["gpu_memory_total_mb"] = round(info.total / 1024 / 1024, 2)
-        pynvml.nvmlShutdown()
-    except (ImportError, ModuleNotFoundError, AttributeError, OSError):
-        # GPU metrics not available (pynvml not installed, no GPU, or driver issues)
+    except ImportError:
         metrics["gpu_memory_used_mb"] = None
         metrics["gpu_memory_total_mb"] = None
+    else:
+        nvml_initialized = False
+        try:
+            pynvml.nvmlInit()
+            nvml_initialized = True
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            metrics["gpu_memory_used_mb"] = round(info.used / 1024 / 1024, 2)
+            metrics["gpu_memory_total_mb"] = round(info.total / 1024 / 1024, 2)
+        except Exception:
+            metrics["gpu_memory_used_mb"] = None
+            metrics["gpu_memory_total_mb"] = None
+        finally:
+            if nvml_initialized:
+                pynvml.nvmlShutdown()
 
     return JSONResponse(status_code=200, content=metrics)
 
