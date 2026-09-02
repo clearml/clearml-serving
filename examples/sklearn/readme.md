@@ -8,7 +8,7 @@ pip install -r examples/sklearn/requirements.txt
 python examples/sklearn/train_model.py
 ```
 
-The output will be a model created on the project "serving examples", by the name "train sklearn model"
+The output will be a model created on the project "serving examples", by the name "train sklearn model - sklearn-model"
 
 ## setting up the serving service
 
