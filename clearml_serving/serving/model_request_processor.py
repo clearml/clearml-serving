@@ -195,11 +195,22 @@ class ModelRequestProcessor(object):
             from clearml.utilities.networking import get_private_ip
 
             url = self._normalize_endpoint_url(endpoint.serving_url, endpoint.version)
-            try:
-                private_ip = get_private_ip()
-            except Exception:
-                private_ip = "localhost"
-            http_url = "http://{}:{}/serve/{}".format(private_ip, os.environ.get("SERVING_PORT", "8080"), url)
+            # externally reachable base url (e.g. load-balancer / ingress), including the serve suffix
+            external_base_url = os.environ.get("CLEARML_EXTERNAL_BASE_SERVE_URL")
+            if external_base_url:
+                http_url = "{}/{}".format(external_base_url.rstrip("/"), url)
+            else:
+                try:
+                    private_ip = get_private_ip()
+                except Exception:
+                    private_ip = "localhost"
+                # SERVING_PORT is not exported by entrypoint.sh, CLEARML_SERVING_PORT is the user facing variable
+                http_url = "http://{}:{}/{}/{}".format(
+                    private_ip,
+                    os.environ.get("CLEARML_SERVING_PORT") or os.environ.get("SERVING_PORT") or "8080",
+                    os.environ.get("CLEARML_DEFAULT_SERVE_SUFFIX", "serve").strip("/"),
+                    url,
+                )
             model = InputModel(model_id=endpoint.model_id)
             model_url = "{}/projects/{}/models/{}/output/general".format(
                 self._task._get_app_server().rstrip("/"), model.project, model.id
