@@ -682,7 +682,7 @@ class ModelRequestProcessor(object):
 
         # make sure we only have one stall request at any given moment
         with self._update_lock_guard:
-            prev_endpoints = dict(**self._endpoints)
+            prev_endpoints = dict(**self._endpoints, **self._model_monitoring_endpoints)
 
             # download artifacts
             # todo: separate into two, download before lock, and overwrite inside lock
@@ -723,10 +723,12 @@ class ModelRequestProcessor(object):
             if update_current_task and Task.current_task() and Task.current_task().id != self._task.id:
                 self.serialize(task=Task.current_task())
 
-            for endpoint in self._endpoints.values():
+            # static endpoints and the versioned endpoints created by model auto-update (model monitoring)
+            current_endpoints = dict(**self._endpoints, **self._model_monitoring_endpoints)
+            for endpoint in current_endpoints.values():
                 self._start_model_endpoint_telemetry(endpoint)
             for endpoint_name, endpoint in prev_endpoints.items():
-                if endpoint_name not in self._endpoints:
+                if endpoint_name not in current_endpoints:
                     self._stop_model_endpoint_telemetry(endpoint)
 
         return True
@@ -1035,7 +1037,9 @@ class ModelRequestProcessor(object):
                 if model_monitor_update and not cleanup:
                     for k in list(self._engine_processor_lookup.keys()):
                         if k not in self._endpoints:
-                            self._stop_model_endpoint_telemetry(self._engine_processor_lookup[k].model_endpoint)
+                            # model monitoring endpoints are still served, keep reporting them
+                            if k not in self._model_monitoring_endpoints:
+                                self._stop_model_endpoint_telemetry(self._engine_processor_lookup[k].model_endpoint)
                             # atomic
                             self._engine_processor_lookup.pop(k, None)
                             call_gc_collect = True
