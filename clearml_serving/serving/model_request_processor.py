@@ -207,7 +207,7 @@ class ModelRequestProcessor(object):
             if url not in self._endpoint_telemetry:
                 container_id = str(uuid.uuid4()).replace("-", "")
                 self._endpoint_telemetry[url] = EndpointTelemetry(
-                    endpoint_name=model.name,
+                    endpoint_name=url,
                     model_name=model.name,
                     model=model.id,
                     model_url=model_url,
@@ -224,7 +224,7 @@ class ModelRequestProcessor(object):
                 )
             else:
                 self._endpoint_telemetry[url].update(
-                    endpoint_name=model.name,
+                    endpoint_name=url,
                     model_name=model.name,
                     model=model.id,
                     model_url=model_url,
