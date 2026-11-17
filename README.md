@@ -299,6 +299,41 @@ Grafana model performance example:
 - Multi-Model ASync Pipeline [example](examples/pipeline/async_preprocess.py) - multiple models
 - Custom Model [example](examples/custom/readme.md) - custom data
 
+## Health Check Endpoints
+
+ClearML Serving provides standard health check endpoints for monitoring and orchestration:
+
+- `GET /health` - Basic service health check
+  - Returns service status, version, and timestamp
+  - Response example:
+    ```json
+    {
+      "status": "healthy",
+      "service": "clearml-serving",
+      "version": "<current version>",
+      "timestamp": 1729700000.0,
+      "instance_id": "a1b2c3d4"
+    }
+    ```
+
+- `GET /readiness` - Service readiness check
+  - Verifies if the service is ready to accept traffic
+  - Checks processor initialization and model loading status
+  - Returns 200 OK when ready, 503 Service Unavailable if not
+
+- `GET /liveness` - Simple liveness check
+  - Lightweight endpoint for container orchestration
+  - Returns 200 OK if the service process is responsive
+
+- `GET /health/metrics` - Service metrics (JSON)
+  - Returns operational metrics including:
+    - Uptime
+    - Request counts
+    - Model loading status
+    - GPU memory usage (if available, via pynvml)
+
+These endpoints are automatically enabled and require no additional configuration.
+
 ### :pray: Status
 
   - [x] FastAPI integration for inference service
@@ -330,6 +365,7 @@ Grafana model performance example:
   - [x] Prometheus install instructions
   - [x] Grafana install instructions
   - [x] Kubernetes Helm Chart
+  - [x] Standard health check endpoints (`/health`, `/readiness`, `/liveness`, `/health/metrics`)
   - [ ] Intel optimized container (python, numpy, daal, scikit-learn)
 
 ## Contributing
