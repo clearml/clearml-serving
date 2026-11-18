@@ -158,9 +158,10 @@ AZURE_STORAGE_KEY
   - create new python virtual environment
   - `pip3 install -r examples/sklearn/requirements.txt`
   - `python3 examples/sklearn/train_model.py`
-  - Model was automatically registered and uploaded into the model repository. For Manual model registration see [here](#turtle-registering--deploying-new-models-manually) 
+  - The model was automatically registered and uploaded into the model repository under the name `train sklearn model - sklearn-model`. For Manual model registration see [here](#turtle-registering--deploying-new-models-manually)
 2. Register the new Model on the Serving Service
-  - `clearml-serving --id <service_id> model add --engine sklearn --endpoint "test_model_sklearn" --preprocess "examples/sklearn/preprocess.py" --name "train sklearn model" --project "serving examples"`
+  - `clearml-serving --id <service_id> model add --engine sklearn --endpoint "test_model_sklearn" --preprocess "examples/sklearn/preprocess.py" --name "train sklearn model - sklearn-model" --project "serving examples"`
+  - Alternatively, copy the model ID from the ClearML Model Registry and select the model unambiguously: `clearml-serving --id <service_id> model add --engine sklearn --endpoint "test_model_sklearn" --preprocess "examples/sklearn/preprocess.py" --model-id <model_id>`
   - **Notice** the preprocessing python code is packaged and uploaded to the "Serving Service", to be used by any inference container, and downloaded in realtime when updated
 3. Spin the Inference Container
   - Customize container [Dockerfile](clearml_serving/serving/Dockerfile) if needed
@@ -205,10 +206,10 @@ The clearml Serving Service support automatic model deployment and upgrades, dir
 #### :bulb: Automatic model deployment example
 
 1. Configure the model auto-update on the Serving Service
-- `clearml-serving --id <service_id> model auto-update --engine sklearn --endpoint "test_model_sklearn_auto" --preprocess "preprocess.py" --name "train sklearn model" --project "serving examples" --max-versions 2`
+- `clearml-serving --id <service_id> model auto-update --engine sklearn --endpoint "test_model_sklearn_auto" --preprocess "preprocess.py" --name "train sklearn model - sklearn-model" --project "serving examples" --max-versions 2`
 2. Deploy the Inference container (if not already deployed)
 3. Publish a new model the model repository
-- Go to the "serving examples" project in the ClearML web UI, click on the Models Tab, search for "train sklearn model" right click and select "Publish"
+- Go to the "serving examples" project in the ClearML web UI, click on the Models Tab, search for "train sklearn model - sklearn-model" right click and select "Publish"
 - Use the RestAPI [details](https://clear.ml/docs/latest/docs/references/api/models#post-modelspublish_many)
 - Use Python interface: 
 ```python
@@ -241,8 +242,8 @@ When we add a new model endpoint version, e.g. `/test_model_sklearn/3/`, the can
 
 Example:
 1. Add two endpoints:
-  - `clearml-serving --id <service_id> model add --engine sklearn --endpoint "test_model_sklearn" --preprocess "examples/sklearn/preprocess.py" --name "train sklearn model" --version 1 --project "serving examples"`
-  -  `clearml-serving --id <service_id> model add --engine sklearn --endpoint "test_model_sklearn" --preprocess "examples/sklearn/preprocess.py" --name "train sklearn model" --version 2 --project "serving examples"`
+  - `clearml-serving --id <service_id> model add --engine sklearn --endpoint "test_model_sklearn" --preprocess "examples/sklearn/preprocess.py" --name "train sklearn model - sklearn-model" --version 1 --project "serving examples"`
+  -  `clearml-serving --id <service_id> model add --engine sklearn --endpoint "test_model_sklearn" --preprocess "examples/sklearn/preprocess.py" --name "train sklearn model - sklearn-model" --version 2 --project "serving examples"`
 2. Add Canary endpoint:
   - `clearml-serving --id <service_id> model canary --endpoint "test_model_sklearn_canary" --weights 0.1 0.9 --input-endpoints test_model_sklearn/2 test_model_sklearn/1`
 3. Test Canary endpoint:
